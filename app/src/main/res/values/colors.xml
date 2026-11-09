@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Фон окна до первой отрисовки Compose; совпадает с Palettes.Light.background. -->
+    <color name="window_background">#FFF4F5F6</color>
+    <color name="ic_launcher_background">#FF101214</color>
+</resources>
