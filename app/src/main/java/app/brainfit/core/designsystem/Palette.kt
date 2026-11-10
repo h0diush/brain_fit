@@ -55,6 +55,23 @@ object Palettes {
     )
 }
 
+/**
+ * Цвета Струпа. Слово показывается на тёмном табло в обеих темах: так чернила одни и те же
+ * и яркие. В светлой теме тёмные чернила на светлом фоне почти сравнялись бы по яркости.
+ * Красный и зелёный заметно различаются по яркости (ТЗ 4.2). Проверяет PaletteContrastTest.
+ */
+object StroopPalette {
+    const val panel = 0xFF15181BL
+
+    /** Подпись на цветной кнопке. */
+    const val label = 0xFF15181BL
+    const val red = 0xFFFF5C5CL
+    const val blue = 0xFF5AA2FFL
+    const val yellow = 0xFFFFD43BL
+    const val green = 0xFF3DDC84L
+    val inks = listOf(red, blue, yellow, green)
+}
+
 /** Контраст по WCAG 2.1 для непрозрачных цветов. */
 object Contrast {
     fun luminance(argb: Long): Double {

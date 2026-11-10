@@ -6,8 +6,9 @@
 ## Где мы
 
 Сделаны этапы 1 (фундамент), 2 (игровой движок: `Game`, `GameSession`, `PlayController`, экран-хост, запись,
-детектор тряски; Room версии 2) и 3 (Шульте, математический спринт, Корси). Дальше этап 4 — Струп, N-back,
-«Двойное решение». Работать строго по этапам, после каждого — сборка, тесты, отчёт.
+детектор тряски; Room версии 2), 3 (Шульте, математический спринт, Корси) и 4 (Струп, N-back, «Двойное решение»).
+Все шесть игр играются. Дальше этап 5 — калибровка, адаптация уровней, тренировки. Работать строго по этапам, после
+каждого — сборка, тесты, отчёт.
 
 Новая игра = логика в `games/<имя>/` (реализация `Game`, чистый Kotlin, тест с массовым прогоном генератора) +
 экран раунда в `feature/play/game/` + модуль с инструкцией в `GameModules.kt` и строка в `GameRegistry.ALL`.
@@ -36,8 +37,8 @@ core/designsystem/   Palette (токены, чистый Kotlin), Theme, Compone
 core/time/           MonotonicClock, WallClock, Stopwatch, FrameClock
 core/sensors/        ShakeMeter, ShakeConfig (чистый Kotlin), SensorShakeMonitor
 core/util/           Json (запись JSON без библиотек)
-games/engine/        Game, GameSession, TrialResult, SessionScore, LevelConfig, Fmt
-games/schulte|mathsprint|corsi/   логика игр
+games/engine/        Game, GameSession, TrialResult, SessionScore, LevelConfig, Fmt, Stats (медиана, d′)
+games/schulte|mathsprint|corsi|stroop|nback|doubledecision/   логика игр
 data/db/             Entities, Daos, BrainFitDatabase (+ Migrations)
 data/repository/     реализации репозиториев
 domain/model/        перечисления, AppSettings, GameCatalog

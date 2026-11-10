@@ -14,9 +14,8 @@ class GameRegistryTest {
     private val registry = GameRegistry()
 
     @Test
-    fun stage3GamesArePlayable() {
-        assertEquals(setOf(GameId.SCHULTE, GameId.MATH, GameId.CORSI), registry.playable)
-        assertEquals(null, registry.get(GameId.STROOP))
+    fun allSixGamesArePlayable() {
+        assertEquals(GameId.entries.toSet(), registry.playable)
     }
 
     @Test

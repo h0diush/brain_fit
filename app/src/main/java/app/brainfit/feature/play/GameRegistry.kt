@@ -56,6 +56,13 @@ class GameRegistry(modules: List<GameModule<*, *, *>>) {
     fun get(id: GameId): GameModule<*, *, *>? = byId[id]
 
     companion object {
-        val ALL: List<GameModule<*, *, *>> = listOf(SchulteModule, MathModule, CorsiModule)
+        val ALL: List<GameModule<*, *, *>> = listOf(
+            SchulteModule,
+            StroopModule,
+            NBackModule,
+            CorsiModule,
+            MathModule,
+            DoubleDecisionModule,
+        )
     }
 }

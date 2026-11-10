@@ -3,6 +3,7 @@ package app.brainfit.core
 import app.brainfit.core.designsystem.Contrast
 import app.brainfit.core.designsystem.Palette
 import app.brainfit.core.designsystem.Palettes
+import app.brainfit.core.designsystem.StroopPalette
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -47,6 +48,19 @@ class PaletteContrastTest {
         assertEquals(0xFF4AC49A, p.accent)
         assertEquals(0xFFE66F76, p.error)
         assertEquals(0xFFE7B45C, p.warning)
+    }
+
+    @Test
+    fun stroopInksAreReadableAndRedDiffersFromGreenInBrightness() {
+        StroopPalette.inks.forEach { ink ->
+            val onPanel = Contrast.ratio(ink, StroopPalette.panel)
+            assertTrue("чернила ${ink.toString(16)} на табло = ${"%.2f".format(onPanel)}", onPanel >= 4.5)
+            val label = Contrast.ratio(StroopPalette.label, ink)
+            assertTrue("подпись на ${ink.toString(16)} = ${"%.2f".format(label)}", label >= 4.5)
+        }
+        // «Без пары красный — зелёный рядом по яркости» (ТЗ 4.2).
+        val redGreen = Contrast.ratio(StroopPalette.red, StroopPalette.green)
+        assertTrue("красный и зелёный по яркости: ${"%.2f".format(redGreen)}", redGreen >= 1.5)
     }
 
     @Test
