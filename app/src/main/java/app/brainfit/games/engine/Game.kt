@@ -82,6 +82,15 @@ interface Game<P, S : Any, I : Any> {
     /** Пробы раунда по порядку. Движок читает их, когда раунд завершён. */
     fun trials(state: S): List<TrialResult>
 
+    /** Задание для пробной попытки перед игрой (не записывается). По умолчанию — раунд уровня 1. */
+    fun generateDemo(rng: Random): P = generate(1, rng, emptyList())
+
+    /** Короткий итог раунда для экрана между раундами; null — не показывать. */
+    fun roundSummary(trials: List<TrialResult>): String? = null
+
+    /** Строки итога сессии для экрана результата. */
+    fun resultLines(score: SessionScore): List<String> = emptyList()
+
     /** Оценка сессии по всем её пробам. */
     fun score(trials: List<TrialResult>, level: Int): SessionScore
 }

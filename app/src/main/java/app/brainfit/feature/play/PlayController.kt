@@ -55,6 +55,10 @@ data class PlayUiState<S>(
     val restartOnResume: Boolean = false,
     val result: SessionScore? = null,
     val shakySession: Boolean = false,
+    /** Короткий итог прошлого раунда — показывается между раундами. */
+    val roundSummary: String? = null,
+    /** Строки результата сессии от игры: время, точность и т. п. */
+    val resultLines: List<String> = emptyList(),
     /** Ошибка сохранения или загрузки. Пока она показана, ввод не принимается; есть «Повторить». */
     val error: String? = null,
     val closed: Boolean = false,
@@ -95,6 +99,7 @@ class PlayController<P, S : Any, I : Any>(
     private var shakeEnabled = true
     private val shakyRounds = mutableListOf<Boolean>()
     private var activeNanos = 0L
+    private var lastRoundSummary: String? = null
     private var retryAction: (suspend () -> Unit)? = null
 
     init {
@@ -227,6 +232,7 @@ class PlayController<P, S : Any, I : Any>(
         shakyRounds += byRound.values.map { records -> records.any { it.isShaky } }
         activeNanos = draft.activeMs * FrameClock.NANOS_PER_MS
         sessionId = draft.id
+        lastRoundSummary = rounds.lastOrNull()?.let { game.roundSummary(it.trials) }
         return GameSession(game, draft.level, seed, rounds)
     }
 
@@ -252,6 +258,7 @@ class PlayController<P, S : Any, I : Any>(
         val shaky = shakeEnabled && shakeConfig.isShaky(rms)
         shakyRounds += shaky
         activeNanos += round.activeNanos
+        lastRoundSummary = game.roundSummary(round.trials)
         val roundIndex = s.completedRounds.size - 1
         val firstIndex = s.completedRounds.dropLast(1).sumOf { it.trials.size }
         val records = round.trials.mapIndexed { i, t ->
@@ -303,6 +310,8 @@ class PlayController<P, S : Any, I : Any>(
                 restored = false,
                 result = score,
                 shakySession = shakySession,
+                roundSummary = null,
+                resultLines = game.resultLines(score),
             )
         }
     }
@@ -321,6 +330,7 @@ class PlayController<P, S : Any, I : Any>(
                 level = s.level,
                 gameState = s.state,
                 restored = restored,
+                roundSummary = if (phase == PlayPhase.READY) lastRoundSummary else null,
             )
         }
     }

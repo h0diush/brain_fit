@@ -22,9 +22,11 @@ class PlayBinding<S : Any, I : Any>(
     val title: String,
     val controller: PlayController<*, S, I>,
     val content: @Composable (state: S, onInput: (I) -> Unit) -> Unit,
+    val howTo: List<String>,
+    val demo: Demo<S, I>,
 ) {
     @Composable
-    fun Screen(onClose: () -> Unit) = PlayScreen(controller, title, content, onClose)
+    fun Screen(onClose: () -> Unit) = PlayScreen(controller, title, content, onClose, howTo, demo)
 }
 
 @HiltViewModel
@@ -64,6 +66,8 @@ class PlayViewModel @Inject constructor(
             onDraftId = { savedState[KEY_DRAFT] = it },
         ),
         content = module.content,
+        howTo = module.howTo,
+        demo = Demo.of(module.game),
     )
 
     override fun onCleared() {

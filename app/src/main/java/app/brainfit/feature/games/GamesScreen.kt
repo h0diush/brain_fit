@@ -26,6 +26,7 @@ import app.brainfit.domain.model.GameDifficulty
 import app.brainfit.domain.model.GameId
 import app.brainfit.domain.repository.DifficultyRepository
 import app.brainfit.feature.play.GameRegistry
+import app.brainfit.games.engine.START_LEVEL
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -79,7 +80,8 @@ fun GamesScreen(onPlay: (GameId) -> Unit, vm: GamesViewModel = hiltViewModel()) 
                     !ready -> "Игра ещё не готова"
                     levels == null -> null
                     level != null -> "Уровень ${level.level}"
-                    else -> "Ещё не играли"
+                    // До калибровки (этап 5) игра стартует с этого уровня.
+                    else -> "Ещё не играли · стартовый уровень $START_LEVEL"
                 }
                 if (status != null) {
                     Text(

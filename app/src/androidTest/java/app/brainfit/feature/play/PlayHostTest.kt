@@ -86,7 +86,8 @@ class PlayHostTest {
         onDraftId = { draftId = it },
     )
 
-    private fun show(controller: PlayController<TapParams, TapState, TapInput>) {
+    private fun show(controller: PlayController<TapParams, TapState, TapInput>, withIntro: Boolean = false) {
+        val game = TapGame(rounds = 2, target = 2, limitNanos = 3_600 * TapGame.NANOS_PER_SECOND)
         rule.setContent {
             BrainFitTheme {
                 PlayScreen(
@@ -99,10 +100,39 @@ class PlayHostTest {
                         }
                     },
                     onClose = { closed = true },
+                    howTo = if (withIntro) listOf("Жми «Попал».") else emptyList(),
+                    demo = if (withIntro) Demo.of(game) else null,
                 )
             }
         }
     }
+
+    @Test
+    fun instructionAndDemoComeFirstAndDemoIsNotSaved() {
+        show(controller(), withIntro = true)
+        waitForText("Как играть")
+        waitForText("•  Жми «Попал».")
+        click("Попробовать")
+        waitForText("Пробная попытка: ответы не записываются")
+        // «Пропустить» возвращает к инструкции.
+        click("Пропустить")
+        click("Попробовать")
+        click("Попал")
+        click("Попал")
+        waitForText("Пробная попытка закончена")
+        waitForText("Итог: попаданий 2 из 2")
+        assertEquals(0, countSessions())
+
+        click("Начать игру")
+        waitForText("Нажатий: 0")
+        assertEquals(1, countSessions())
+        click("Попал")
+        click("Попал")
+        waitForText("Прошлый раунд: попаданий 2 из 2")
+    }
+
+    private fun countSessions(): Int =
+        db.query("SELECT COUNT(*) FROM exercise_sessions", null).use { c -> c.moveToFirst(); c.getInt(0) }
 
     /** Ждём запись в базу и перерисовку: двигаем кадры, пока текст не появится. */
     private fun waitForText(text: String) {

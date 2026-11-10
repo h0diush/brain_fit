@@ -5,12 +5,14 @@
 
 ## Где мы
 
-Сделаны этап 1 (фундамент) и этап 2 (игровой движок: контракт `Game`, `GameSession`, `PlayController`,
-экран-хост, запись сессий, детектор тряски; Room версии 2). Игр ещё нет — `GameRegistry` пуст.
-Дальше этап 3 — Шульте, математический спринт, Корси. Работать строго по этапам, после каждого — сборка, тесты, отчёт.
+Сделаны этапы 1 (фундамент), 2 (игровой движок: `Game`, `GameSession`, `PlayController`, экран-хост, запись,
+детектор тряски; Room версии 2) и 3 (Шульте, математический спринт, Корси). Дальше этап 4 — Струп, N-back,
+«Двойное решение». Работать строго по этапам, после каждого — сборка, тесты, отчёт.
 
-Новая игра = логика в `games/<имя>/` (реализация `Game`, чистый Kotlin) + экран раунда и строка в
-`GameRegistry.ALL` (`feature/play`). Паузу, раунды, запись и результат делает хост — в игре их не повторять.
+Новая игра = логика в `games/<имя>/` (реализация `Game`, чистый Kotlin, тест с массовым прогоном генератора) +
+экран раунда в `feature/play/game/` + модуль с инструкцией в `GameModules.kt` и строка в `GameRegistry.ALL`.
+Инструкцию, пробную попытку, паузу, раунды, запись и результат делает хост — в игре их не повторять.
+Нажатия в играх — `Modifier.onPressDown`, размер цифр — `fixedSp` (`core/designsystem/Press.kt`).
 
 ## Сборка (Windows)
 
@@ -34,13 +36,14 @@ core/designsystem/   Palette (токены, чистый Kotlin), Theme, Compone
 core/time/           MonotonicClock, WallClock, Stopwatch, FrameClock
 core/sensors/        ShakeMeter, ShakeConfig (чистый Kotlin), SensorShakeMonitor
 core/util/           Json (запись JSON без библиотек)
-games/engine/        Game, GameSession, TrialResult, SessionScore, LevelConfig
+games/engine/        Game, GameSession, TrialResult, SessionScore, LevelConfig, Fmt
+games/schulte|mathsprint|corsi/   логика игр
 data/db/             Entities, Daos, BrainFitDatabase (+ Migrations)
 data/repository/     реализации репозиториев
 domain/model/        перечисления, AppSettings, GameCatalog
 domain/repository/   интерфейсы репозиториев
 di/                  AppModule (Room, DataStore), RepositoryModule
-feature/             navigation, home, games, progress, settings, play (хост игры)
+feature/             navigation, home, games, progress, settings, play (хост игры, play/game — экраны раундов)
 ```
 
 Тесты: `src/test` — JVM, `src/androidTest` — на устройстве, `src/sharedTest` — игра-заглушка `TapGame` и подделки для обоих.

@@ -312,6 +312,34 @@ class PlayControllerTest {
     }
 
     @Test
+    fun roundSummaryIsShownBetweenRoundsAndResultLinesAtTheEnd() {
+        val c = controller(TapGame(rounds = 2, target = 2))
+        assertNull(c.state.value.roundSummary)
+        c.playRound(TapInput.HIT, TapInput.MISS)
+        assertEquals("попаданий 1 из 2", c.state.value.roundSummary)
+        c.startRound()
+        // Во время раунда итога прошлого не видно.
+        assertNull(c.state.value.roundSummary)
+        clock.advanceMs(100)
+        c.input(TapInput.HIT)
+        clock.advanceMs(100)
+        c.input(TapInput.HIT)
+        val ui = c.state.value
+        assertEquals(PlayPhase.FINISHED, ui.phase)
+        assertNull(ui.roundSummary)
+        assertEquals(listOf("Проб: 4"), ui.resultLines)
+    }
+
+    @Test
+    fun restoredSessionShowsSummaryOfLastSavedRound() {
+        val first = controller(TapGame(rounds = 3, target = 2))
+        first.playRound(TapInput.MISS, TapInput.MISS)
+        val second = controller(TapGame(rounds = 3, target = 2), seed = 7)
+        assertTrue(second.state.value.restored)
+        assertEquals("попаданий 0 из 2", second.state.value.roundSummary)
+    }
+
+    @Test
     fun deathBetweenLastRoundAndResultIsFinishedOnRestore() {
         val first = controller(TapGame(rounds = 1, target = 1))
         repo.failOnce += "finish"

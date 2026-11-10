@@ -81,6 +81,10 @@ class TapGame(
         return SessionScore(accuracy, mapOf("accuracy" to accuracy, "trials" to trials.size.toDouble()))
     }
 
+    override fun roundSummary(trials: List<TrialResult>) = "попаданий ${trials.count { it.correct }} из ${trials.size}"
+
+    override fun resultLines(score: SessionScore) = listOf("Проб: ${score.metrics.getValue("trials").toInt()}")
+
     companion object {
         const val NANOS_PER_SECOND = 1_000_000_000L
     }
