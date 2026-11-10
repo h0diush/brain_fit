@@ -79,8 +79,9 @@ fun GamesScreen(onPlay: (GameId) -> Unit, vm: GamesViewModel = hiltViewModel()) 
                 val status = when {
                     !ready -> "Игра ещё не готова"
                     levels == null -> null
-                    level != null -> "Уровень ${level.level}"
-                    // До калибровки (этап 5) игра стартует с этого уровня.
+                    level != null && level.calibrated -> "Уровень ${level.level}"
+                    level != null -> "Уровень ${level.level} · калибровка"
+                    // Запись об уровне появляется после первой завершённой сессии.
                     else -> "Ещё не играли · стартовый уровень $START_LEVEL"
                 }
                 if (status != null) {

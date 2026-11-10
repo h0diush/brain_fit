@@ -6,9 +6,12 @@
 ## Где мы
 
 Сделаны этапы 1 (фундамент), 2 (игровой движок: `Game`, `GameSession`, `PlayController`, экран-хост, запись,
-детектор тряски; Room версии 2), 3 (Шульте, математический спринт, Корси) и 4 (Струп, N-back, «Двойное решение»).
-Все шесть игр играются. Дальше этап 5 — калибровка, адаптация уровней, тренировки. Работать строго по этапам, после
-каждого — сборка, тесты, отчёт.
+детектор тряски), 3 (Шульте, математический спринт, Корси), 4 (Струп, N-back, «Двойное решение») и 5 (калибровка,
+адаптация уровней, быстрая и стандартная тренировки, «Продолжить»; Room версии 3). Дальше этап 6 — прогресс: графики,
+рекорды, история уровней, серия дней. Работать строго по этапам, после каждого — сборка, тесты, отчёт.
+
+Уровень игры ведёт `PlayController` по правилам `domain/adaptive/Adaptation` и пишет его вместе с итогом сессии
+(`SessionRepository.finishSession`). Подбор игр в тренировку — `domain/workout/WorkoutPlanner`.
 
 Новая игра = логика в `games/<имя>/` (реализация `Game`, чистый Kotlin, тест с массовым прогоном генератора) +
 экран раунда в `feature/play/game/` + модуль с инструкцией в `GameModules.kt` и строка в `GameRegistry.ALL`.
@@ -41,10 +44,12 @@ games/engine/        Game, GameSession, TrialResult, SessionScore, LevelConfig, 
 games/schulte|mathsprint|corsi|stroop|nback|doubledecision/   логика игр
 data/db/             Entities, Daos, BrainFitDatabase (+ Migrations)
 data/repository/     реализации репозиториев
-domain/model/        перечисления, AppSettings, GameCatalog
+domain/model/        перечисления, AppSettings, GameCatalog, модели сессий, уровней и тренировок
+domain/adaptive/     Adaptation, AdaptiveConfig (калибровка и окно)
+domain/workout/      WorkoutPlanner (подбор игр)
 domain/repository/   интерфейсы репозиториев
 di/                  AppModule (Room, DataStore), RepositoryModule
-feature/             navigation, home, games, progress, settings, play (хост игры, play/game — экраны раундов)
+feature/             navigation, home, games, progress, settings, workout, play (хост игры, play/game — экраны раундов)
 ```
 
 Тесты: `src/test` — JVM, `src/androidTest` — на устройстве, `src/sharedTest` — игра-заглушка `TapGame` и подделки для обоих.

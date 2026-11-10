@@ -6,8 +6,15 @@ import app.brainfit.core.time.FrameClock
 import app.brainfit.core.time.MonotonicClock
 import app.brainfit.core.time.WallClock
 import app.brainfit.core.util.Json
+import app.brainfit.domain.adaptive.Adaptation
+import app.brainfit.domain.adaptive.AdaptiveConfig
+import app.brainfit.domain.adaptive.AdaptiveConfigs
+import app.brainfit.domain.model.AdaptationInput
+import app.brainfit.domain.model.DifficultyUpdate
+import app.brainfit.domain.model.LevelChange
 import app.brainfit.domain.model.NewSession
 import app.brainfit.domain.model.SessionDraft
+import app.brainfit.domain.model.SessionFinish
 import app.brainfit.domain.model.SessionMode
 import app.brainfit.domain.model.TrialRecord
 import app.brainfit.domain.repository.DifficultyRepository
@@ -59,6 +66,12 @@ data class PlayUiState<S>(
     val roundSummary: String? = null,
     /** Строки результата сессии от игры: время, точность и т. п. */
     val resultLines: List<String> = emptyList(),
+    /** Сессия калибровочная: уровень меняется между раундами. */
+    val calibration: Boolean = false,
+    /** Что калибровка сделала с уровнем после прошлого раунда — показывается между раундами. */
+    val levelNote: String? = null,
+    /** Что стало с уровнем по итогам сессии — на экране результата. Скрытых изменений нет (ТЗ, раздел 6). */
+    val levelLines: List<String> = emptyList(),
     /** Ошибка сохранения или загрузки. Пока она показана, ввод не принимается; есть «Повторить». */
     val error: String? = null,
     val closed: Boolean = false,
@@ -69,8 +82,14 @@ data class PlayUiState<S>(
  * поэтому целиком проверяется JVM-тестами. Все вызовы — с одного потока ([scope] на главном).
  *
  * Запись: черновик сессии создаётся при старте первого раунда, пробы пишутся после каждого
- * завершённого раунда, итог — в конце. Недоигранный раунд не сохраняется.
+ * завершённого раунда, итог — в конце вместе с уровнем игры. Недоигранный раунд не сохраняется.
  *
+ * Уровень (ТЗ, раздел 6). Пока игра не откалибрована, сессия калибровочная: после каждого блока раундов
+ * уровень сдвигается на 1 по результату блока, тряский блок уровень не трогает. После калибровки уровень
+ * меняется только по окну сессий ([Adaptation.decide]). Новый уровень пишется в базу с итогом сессии;
+ * после смерти процесса уровень калибровки восстанавливается из уровней сохранённых раундов.
+ *
+ * @param workoutId тренировка, из которой запущена игра, или null для свободной игры.
  * @param draftId черновик, который надо продолжить (из SavedStateHandle), или null.
  * @param onDraftId куда запомнить id черновика, чтобы он пережил смерть процесса.
  */
@@ -85,9 +104,11 @@ class PlayController<P, S : Any, I : Any>(
     private val clock: MonotonicClock,
     private val wallClock: WallClock,
     private val seed: Long,
+    private val workoutId: Long? = null,
     private val draftId: Long? = null,
     private val onDraftId: (Long?) -> Unit = {},
     private val shakeConfig: ShakeConfig = ShakeConfig(),
+    private val adaptive: AdaptiveConfig = AdaptiveConfigs.of(game.id),
 ) {
     private val _state = MutableStateFlow(
         PlayUiState<S>(restartOnResume = game.resumePolicy == ResumePolicy.RESTART_ROUND),
@@ -100,6 +121,8 @@ class PlayController<P, S : Any, I : Any>(
     private val shakyRounds = mutableListOf<Boolean>()
     private var activeNanos = 0L
     private var lastRoundSummary: String? = null
+    private var levelNote: String? = null
+    private var calibration = false
     private var retryAction: (suspend () -> Unit)? = null
 
     init {
@@ -116,11 +139,11 @@ class PlayController<P, S : Any, I : Any>(
                     NewSession(
                         gameId = game.id,
                         mode = mode,
-                        level = s.level,
-                        // Калибровка и подбор уровня — этап 5.
-                        isCalibration = false,
+                        level = s.startLevel,
+                        isCalibration = calibration,
                         scoringVersion = game.scoringVersion,
                         startedAt = wallClock.nowMillis(),
+                        workoutId = workoutId,
                     ),
                 )
                 sessionId = id
@@ -218,22 +241,46 @@ class PlayController<P, S : Any, I : Any>(
 
     private suspend fun fresh(): GameSession<P, S, I> {
         onDraftId(null)
-        val level = (difficulty.observeStates().first()[game.id]?.level ?: START_LEVEL)
-            .coerceIn(1, game.levels.size)
-        return GameSession(game, level, seed)
+        val state = difficulty.adaptationInput(game.id, windowLimit()).state
+        val level = (state?.level ?: START_LEVEL).coerceIn(1, game.levels.size)
+        calibration = state?.calibrated != true
+        return GameSession(game, level, seed, previous = previousTrials())
     }
 
-    private fun restore(draft: SessionDraft): GameSession<P, S, I> {
+    private suspend fun restore(draft: SessionDraft): GameSession<P, S, I> {
         val byRound = draft.trials.groupBy { it.round }.toSortedMap()
         val rounds = byRound.values.map { records ->
             // Длительность отдельных раундов не хранится: общее активное время берём из черновика.
-            CompletedRound(records.sortedBy { it.index }.map { it.toResult() }, activeNanos = 0L)
+            val sorted = records.sortedBy { it.index }
+            CompletedRound(sorted.map { it.toResult() }, activeNanos = 0L, level = sorted.first().level.coerceIn(1, game.levels.size))
         }
         shakyRounds += byRound.values.map { records -> records.any { it.isShaky } }
         activeNanos = draft.activeMs * FrameClock.NANOS_PER_MS
         sessionId = draft.id
+        calibration = draft.isCalibration
         lastRoundSummary = rounds.lastOrNull()?.let { game.roundSummary(it.trials) }
-        return GameSession(game, draft.level, seed, rounds)
+        val s = GameSession(game, draft.level.coerceIn(1, game.levels.size), seed, rounds, previousTrials())
+        if (calibration) s.changeLevel(calibrationLevelAfter(s))
+        return s
+    }
+
+    /** Пробы прошлой завершённой сессии игры: через них переносится то, что игра переносит между сессиями. */
+    private suspend fun previousTrials(): List<TrialResult> = sessions.lastCompletedTrials(game.id).map { it.toResult() }
+
+    private fun windowLimit(): Int = maxOf(adaptive.window, adaptive.streak)
+
+    /**
+     * Уровень следующего раунда калибровки по уже сыгранным: в конце каждого блока — шаг по score блока,
+     * если блок не тряский (тряских раундов больше половины). Внутри блока уровень не меняется.
+     */
+    private fun calibrationLevelAfter(s: GameSession<P, S, I>): Int {
+        val rounds = s.completedRounds
+        val last = rounds.lastOrNull() ?: return s.level
+        if (rounds.size % adaptive.calibrationBlock != 0) return last.level
+        val shaky = shakyRounds.takeLast(adaptive.calibrationBlock)
+        if (shaky.count { it } * 2 > shaky.size) return last.level
+        val block = rounds.takeLast(adaptive.calibrationBlock).flatMap { it.trials }
+        return Adaptation.calibrationStep(last.level, game.score(block, last.level).score, game.levels.size, adaptive)
     }
 
     private fun beginRound(s: GameSession<P, S, I>) {
@@ -264,6 +311,7 @@ class PlayController<P, S : Any, I : Any>(
         val records = round.trials.mapIndexed { i, t ->
             TrialRecord(
                 round = roundIndex,
+                level = round.level,
                 index = firstIndex + i,
                 paramsJson = t.paramsJson,
                 answerJson = t.answerJson,
@@ -272,6 +320,18 @@ class PlayController<P, S : Any, I : Any>(
                 errorType = t.errorType,
                 isShaky = shaky,
             )
+        }
+        if (calibration) {
+            val next = calibrationLevelAfter(s)
+            val blockEnded = s.completedRounds.size % adaptive.calibrationBlock == 0
+            val blockShaky = shakyRounds.takeLast(adaptive.calibrationBlock).let { b -> b.count { it } * 2 > b.size }
+            levelNote = when {
+                next > round.level -> "Калибровка: уровень повышен до $next."
+                next < round.level -> "Калибровка: уровень понижен до $next."
+                blockEnded && blockShaky -> "Трясло — на калибровке уровень не меняем."
+                else -> null
+            }
+            s.changeLevel(next)
         }
         val activeMs = activeMs()
         _state.update { it.copy(phase = PlayPhase.SAVING, gameState = null) }
@@ -291,13 +351,22 @@ class PlayController<P, S : Any, I : Any>(
         val score = s.score()
         // Больше половины раундов в тряске — вся сессия не влияет на уровень и рекорды скорости.
         val shakySession = shakyRounds.count { it } * 2 > shakyRounds.size
+        val input = difficulty.adaptationInput(game.id, windowLimit())
+        val (update, levelLines) = if (calibration) {
+            calibrationResult(s, input, shakySession)
+        } else {
+            adaptationResult(s, input, score.score, shakySession)
+        }
         sessions.finishSession(
-            sessionId = id,
-            endedAt = wallClock.nowMillis(),
-            activeMs = activeMs(),
-            score = score.score,
-            metricsJson = Json.encode(score.metrics),
-            isShaky = shakySession,
+            SessionFinish(
+                sessionId = id,
+                endedAt = wallClock.nowMillis(),
+                activeMs = activeMs(),
+                score = score.score,
+                metricsJson = Json.encode(score.metrics),
+                isShaky = shakySession,
+                difficulty = update,
+            ),
         )
         onDraftId(null)
         _state.update {
@@ -311,9 +380,55 @@ class PlayController<P, S : Any, I : Any>(
                 result = score,
                 shakySession = shakySession,
                 roundSummary = null,
+                levelNote = null,
                 resultLines = game.resultLines(score),
+                levelLines = levelLines,
             )
         }
+    }
+
+    /** Калибровка: уровень — тот, к которому пришли раунды; калибровка кончается на N-й нетряской сессии. */
+    private fun calibrationResult(
+        s: GameSession<P, S, I>,
+        input: AdaptationInput,
+        shakySession: Boolean,
+    ): Pair<DifficultyUpdate, List<String>> {
+        val levels = s.completedRounds.map { it.level } + s.level
+        val changes = levels.zipWithNext()
+            .filter { (from, to) -> from != to }
+            .map { (from, to) -> LevelChange(from, to, Adaptation.REASON_CALIBRATION) }
+        val counted = input.calibrationSessions + if (shakySession) 0 else 1
+        val done = counted >= adaptive.calibrationSessions
+        val lines = listOfNotNull(
+            levelLine(s.startLevel, s.level) ?: "Уровень ${s.level}: калибровка его не изменила.",
+            when {
+                shakySession -> "Из-за тряски сессия не засчитана в калибровку."
+                done -> "Калибровка закончена. Дальше уровень меняется по итогам нескольких сессий подряд."
+                else -> "Калибровка: сыграно $counted из ${adaptive.calibrationSessions}."
+            },
+        )
+        return DifficultyUpdate(game.id, s.level, calibrated = done, changes) to lines
+    }
+
+    /** Обычные правила: окно сессий на этом уровне плюс только что сыгранная, если она не тряская. */
+    private fun adaptationResult(
+        s: GameSession<P, S, I>,
+        input: AdaptationInput,
+        score: Double,
+        shakySession: Boolean,
+    ): Pair<DifficultyUpdate, List<String>> {
+        val level = s.startLevel
+        val earlier = if (input.state?.level == level) input.window else emptyList()
+        val window = if (shakySession) earlier else listOf(score) + earlier
+        val change = Adaptation.decide(level, game.levels.size, window, adaptive)
+        val update = DifficultyUpdate(game.id, change?.toLevel ?: level, calibrated = true, listOfNotNull(change))
+        return update to listOfNotNull(change?.let { levelLine(it.fromLevel, it.toLevel) })
+    }
+
+    private fun levelLine(from: Int, to: Int): String? = when {
+        to > from -> "Уровень повышен до $to."
+        to < from -> "Уровень понижен до $to."
+        else -> null
     }
 
     private fun close() {
@@ -330,7 +445,9 @@ class PlayController<P, S : Any, I : Any>(
                 level = s.level,
                 gameState = s.state,
                 restored = restored,
+                calibration = calibration,
                 roundSummary = if (phase == PlayPhase.READY) lastRoundSummary else null,
+                levelNote = if (phase == PlayPhase.READY) levelNote else null,
             )
         }
     }

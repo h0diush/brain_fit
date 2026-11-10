@@ -4,6 +4,9 @@ import app.brainfit.games.engine.GameSession.Phase
 import app.brainfit.testing.TapGame
 import app.brainfit.testing.TapGame.Companion.NANOS_PER_SECOND
 import app.brainfit.testing.TapInput
+import app.brainfit.testing.TapParams
+import app.brainfit.testing.TapState
+import kotlin.random.Random
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
@@ -175,9 +178,67 @@ class GameSessionTest {
         assertEquals(listOf(0, 2, 4), game.historySizes)
     }
 
+    /** TapGame, у которого score — это уровень / 10, а generate запоминает уровни. */
+    private class LevelledGame(private val tap: TapGame = TapGame(rounds = 3, target = 1)) : Game<TapParams, TapState, TapInput> by tap {
+        val generatedLevels = mutableListOf<Int>()
+        var previousSeen: List<TrialResult>? = null
+
+        override fun generate(level: Int, rng: Random, history: List<TrialResult>, previous: List<TrialResult>): TapParams {
+            generatedLevels += level
+            previousSeen = previous
+            return tap.generate(level, rng, history)
+        }
+
+        override fun score(trials: List<TrialResult>, level: Int) = SessionScore(level / 10.0, mapOf("level" to level.toDouble()))
+    }
+
+    @Test
+    fun levelCanChangeBetweenRoundsAndEachRunIsScoredAtItsLevel() {
+        val game = LevelledGame()
+        val previous = listOf(TrialResult("{}", "{}", correct = true, rtMs = 1))
+        val s = GameSession(game, level = 2, seed = 1, previous = previous)
+        s.startRound(0)
+        s.input(TapInput.HIT, 1)
+        s.changeLevel(3)
+        assertEquals(3, s.level)
+        assertEquals(2, s.startLevel)
+        repeat(2) {
+            s.startRound(0)
+            s.input(TapInput.HIT, 1)
+        }
+        assertEquals(listOf(2, 3, 3), game.generatedLevels)
+        assertEquals(listOf(2, 3, 3), s.completedRounds.map { it.level })
+        assertEquals(previous, game.previousSeen)
+        // (0,2 × 1 + 0,3 × 2) / 3; метрики — по уровню последнего раунда.
+        assertEquals((0.2 + 0.6) / 3, s.score().score, 1e-9)
+        assertEquals(3.0, s.score().metrics.getValue("level"), 1e-9)
+    }
+
+    @Test
+    fun sessionOnOneLevelIsScoredAsAWhole() {
+        val s = GameSession(LevelledGame(), level = 2, seed = 1)
+        repeat(3) {
+            s.startRound(0)
+            s.input(TapInput.HIT, 1)
+        }
+        assertEquals(0.2, s.score().score, 1e-9)
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun levelCannotChangeInTheMiddleOfRound() {
+        val s = GameSession(LevelledGame(), level = 2, seed = 1)
+        s.startRound(0)
+        s.changeLevel(3)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun levelCannotLeaveTheTable() {
+        GameSession(LevelledGame(), level = 2, seed = 1).changeLevel(4)
+    }
+
     @Test
     fun continuesFromCompletedRounds() {
-        val done = CompletedRound(listOf(TrialResult("{}", "{}", correct = false, rtMs = 10)), activeNanos = 0)
+        val done = CompletedRound(listOf(TrialResult("{}", "{}", correct = false, rtMs = 10)), activeNanos = 0, level = 2)
         val game = TapGame(rounds = 2, target = 1)
         val s = session(game, completed = listOf(done))
         assertEquals(Phase.READY, s.phase)
@@ -191,7 +252,7 @@ class GameSessionTest {
 
     @Test
     fun sessionWithAllRoundsRestoredIsFinished() {
-        val done = CompletedRound(listOf(TrialResult("{}", "{}", correct = true, rtMs = 10)), activeNanos = 0)
+        val done = CompletedRound(listOf(TrialResult("{}", "{}", correct = true, rtMs = 10)), activeNanos = 0, level = 2)
         val s = session(TapGame(rounds = 2, target = 1), completed = listOf(done, done))
         assertEquals(Phase.FINISHED, s.phase)
         assertEquals(1.0, s.score().score, 1e-9)

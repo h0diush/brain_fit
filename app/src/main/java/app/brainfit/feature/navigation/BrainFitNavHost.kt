@@ -26,13 +26,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import app.brainfit.core.designsystem.Dimens
 import app.brainfit.feature.games.GamesScreen
 import app.brainfit.domain.model.GameId
+import app.brainfit.domain.model.SessionMode
+import app.brainfit.feature.workout.WorkoutScreen
+import app.brainfit.feature.workout.WorkoutViewModel
 import app.brainfit.feature.home.HomeScreen
 import app.brainfit.feature.play.PlayRoute
 import app.brainfit.feature.play.PlayViewModel
@@ -44,9 +49,15 @@ object Routes {
     const val GAMES = "games"
     const val PROGRESS = "progress"
     const val SETTINGS = "settings"
-    const val PLAY = "play/{${PlayViewModel.ARG_GAME}}"
+    const val PLAY = "play/{${PlayViewModel.ARG_GAME}}" +
+        "?${PlayViewModel.ARG_WORKOUT}={${PlayViewModel.ARG_WORKOUT}}&${PlayViewModel.ARG_MODE}={${PlayViewModel.ARG_MODE}}"
+    const val WORKOUT = "workout/{${WorkoutViewModel.ARG_WORKOUT}}"
 
-    fun play(game: GameId) = "play/${game.name}"
+    /** Свободная игра или игра тренировки [workoutId]. */
+    fun play(game: GameId, workoutId: Long? = null, mode: SessionMode = SessionMode.FREE) =
+        "play/${game.name}?${PlayViewModel.ARG_WORKOUT}=${workoutId ?: -1}&${PlayViewModel.ARG_MODE}=${mode.name}"
+
+    fun workout(id: Long) = "workout/$id"
 
     /** Три вкладки нижней панели (ТЗ, раздел 8). Настройки — иконкой в шапке. */
     val tabs = listOf(
@@ -65,15 +76,20 @@ fun BrainFitNavHost() {
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     val currentTab = Routes.tabs.firstOrNull { it.route == route }
+    // Экраны со своей шапкой «назад»; у экрана игры шапки приложения нет — её рисует хост игры.
+    val innerTitle = when (route) {
+        Routes.SETTINGS -> "Настройки"
+        Routes.WORKOUT -> "Тренировка"
+        else -> null
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            // На экране игры своей шапки у приложения нет: её рисует хост игры.
-            if (currentTab != null || route == Routes.SETTINGS) TopAppBar(
-                title = { Text(currentTab?.title ?: if (route == Routes.SETTINGS) "Настройки" else "") },
+            if (currentTab != null || innerTitle != null) TopAppBar(
+                title = { Text(currentTab?.title ?: innerTitle.orEmpty()) },
                 navigationIcon = {
-                    if (route == Routes.SETTINGS) {
+                    if (innerTitle != null) {
                         IconButton(onClick = { nav.popBackStack() }) {
                             Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Назад")
                         }
@@ -123,11 +139,34 @@ fun BrainFitNavHost() {
             popEnterTransition = { fadeIn(tween(Dimens.ANIM_MS)) },
             popExitTransition = { fadeOut(tween(Dimens.ANIM_MS)) },
         ) {
-            composable(Routes.HOME) { HomeScreen() }
+            composable(Routes.HOME) {
+                HomeScreen(onOpenWorkout = { nav.navigate(Routes.workout(it)) { launchSingleTop = true } })
+            }
             composable(Routes.GAMES) { GamesScreen(onPlay = { nav.navigate(Routes.play(it)) { launchSingleTop = true } }) }
             composable(Routes.PROGRESS) { ProgressScreen() }
             composable(Routes.SETTINGS) { SettingsScreen() }
-            composable(Routes.PLAY) { PlayRoute(onClose = { nav.popBackStack() }) }
+            composable(
+                Routes.WORKOUT,
+                arguments = listOf(navArgument(WorkoutViewModel.ARG_WORKOUT) { type = NavType.LongType }),
+            ) {
+                WorkoutScreen(
+                    onPlay = { game, workoutId, mode -> nav.navigate(Routes.play(game, workoutId, mode)) { launchSingleTop = true } },
+                    onClose = { nav.popBackStack() },
+                )
+            }
+            composable(
+                Routes.PLAY,
+                arguments = listOf(
+                    navArgument(PlayViewModel.ARG_WORKOUT) {
+                        type = NavType.LongType
+                        defaultValue = -1L
+                    },
+                    navArgument(PlayViewModel.ARG_MODE) {
+                        type = NavType.StringType
+                        defaultValue = SessionMode.FREE.name
+                    },
+                ),
+            ) { PlayRoute(onClose = { nav.popBackStack() }) }
         }
     }
 }

@@ -19,9 +19,11 @@ import app.brainfit.data.db.WorkoutDao
 import app.brainfit.data.repository.DifficultyRepositoryImpl
 import app.brainfit.data.repository.SessionRepositoryImpl
 import app.brainfit.data.repository.SettingsRepositoryImpl
+import app.brainfit.data.repository.WorkoutRepositoryImpl
 import app.brainfit.domain.repository.DifficultyRepository
 import app.brainfit.domain.repository.SessionRepository
 import app.brainfit.domain.repository.SettingsRepository
+import app.brainfit.domain.repository.WorkoutRepository
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -78,6 +80,9 @@ abstract class RepositoryModule {
 
     @Binds
     abstract fun bindDifficulty(impl: DifficultyRepositoryImpl): DifficultyRepository
+
+    @Binds
+    abstract fun bindWorkouts(impl: WorkoutRepositoryImpl): WorkoutRepository
 
     @Binds
     abstract fun bindShakeMonitor(impl: SensorShakeMonitor): ShakeMonitor

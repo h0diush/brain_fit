@@ -51,8 +51,8 @@ class PlayViewModel @Inject constructor(
         title = GameCatalog.get(module.game.id).title,
         controller = PlayController(
             game = module.game,
-            // Тренировки (быстрая, стандартная) — этап 5; пока игра запускается только свободно.
-            mode = SessionMode.FREE,
+            mode = SessionMode.entries.firstOrNull { it.name == savedState.get<String>(ARG_MODE) } ?: SessionMode.FREE,
+            workoutId = savedState.get<Long>(ARG_WORKOUT)?.takeIf { it >= 0 },
             scope = viewModelScope,
             sessions = sessions,
             difficulty = difficulty,
@@ -76,6 +76,12 @@ class PlayViewModel @Inject constructor(
 
     companion object {
         const val ARG_GAME = "gameId"
+
+        /** Тренировка, из которой запущена игра; -1 — свободная игра. */
+        const val ARG_WORKOUT = "workoutId"
+
+        /** Имя SessionMode. */
+        const val ARG_MODE = "mode"
         private const val KEY_DRAFT = "draftSessionId"
     }
 }

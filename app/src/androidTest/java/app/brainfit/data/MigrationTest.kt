@@ -56,4 +56,41 @@ class MigrationTest {
         }
         db.close()
     }
+
+    @Test
+    fun migrate2To3GivesTrialsTheLevelOfTheirSession() {
+        helper.createDatabase(dbName, 2).apply {
+            execSQL(
+                "INSERT INTO exercise_sessions (id, gameId, workoutId, mode, startedAt, endedAt, activeMs, level, score, " +
+                    "status, isCalibration, scoringVersion, metricsJson, isShaky) " +
+                    "VALUES (3, 'CORSI', NULL, 'FREE', 1000, 61000, 55000, 4, 0.5, 'COMPLETED', 0, 1, '{}', 0)",
+            )
+            execSQL(
+                "INSERT INTO exercise_sessions (id, gameId, workoutId, mode, startedAt, endedAt, activeMs, level, score, " +
+                    "status, isCalibration, scoringVersion, metricsJson, isShaky) " +
+                    "VALUES (4, 'NBACK', NULL, 'FREE', 2000, NULL, 0, 6, NULL, 'IN_PROGRESS', 1, 1, '{}', 0)",
+            )
+            for ((id, session) in listOf(1 to 3, 2 to 3, 3 to 4)) {
+                execSQL(
+                    "INSERT INTO trials (id, sessionId, `index`, paramsJson, answerJson, correct, rtMs, errorType, isShaky, round) " +
+                        "VALUES ($id, $session, $id, '{}', '{}', 1, 300, NULL, 0, 0)",
+                )
+            }
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 3, true, *Migrations.ALL)
+
+        db.query("SELECT id, level FROM trials ORDER BY id").use { c ->
+            val levels = buildList { while (c.moveToNext()) add(c.getInt(0) to c.getInt(1)) }
+            assertEquals(listOf(1 to 4, 2 to 4, 3 to 6), levels)
+        }
+        db.close()
+    }
+
+    @Test
+    fun migrateAllTheWayFrom1() {
+        helper.createDatabase(dbName, 1).close()
+        helper.runMigrationsAndValidate(dbName, 3, true, *Migrations.ALL).close()
+    }
 }

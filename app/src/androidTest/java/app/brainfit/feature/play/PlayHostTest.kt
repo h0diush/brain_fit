@@ -59,7 +59,7 @@ class PlayHostTest {
     @Before
     fun open() {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), BrainFitDatabase::class.java).build()
-        repo = SessionRepositoryImpl(db, db.sessionDao(), db.trialDao())
+        repo = SessionRepositoryImpl(db, db.sessionDao(), db.trialDao(), db.difficultyDao(), db.workoutDao())
         // Кадры идут без остановки, пока раунд запущен: часы теста двигаем вручную.
         rule.mainClock.autoAdvance = false
     }

@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         WorkoutEntity::class,
         WorkoutItemEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class BrainFitDatabase : RoomDatabase() {
@@ -32,11 +32,17 @@ abstract class BrainFitDatabase : RoomDatabase() {
  * Новая схема = version + 1, миграция здесь, запись в ALL и тест в MigrationTest.
  * fallbackToDestructiveMigration не используется: данные пользователя не стираются.
  *
- * Версии: 1 → 2 — exercise_sessions.isShaky и trials.round (этап 2, игровой движок).
+ * Версии: 1 → 2 — exercise_sessions.isShaky и trials.round (этап 2, игровой движок);
+ * 2 → 3 — trials.level (этап 5, калибровка меняет уровень между раундами).
  */
 object Migrations {
     const val SQL_1_2_SESSION_SHAKY = "ALTER TABLE exercise_sessions ADD COLUMN isShaky INTEGER NOT NULL DEFAULT 0"
     const val SQL_1_2_TRIAL_ROUND = "ALTER TABLE trials ADD COLUMN round INTEGER NOT NULL DEFAULT 0"
+    const val SQL_2_3_TRIAL_LEVEL = "ALTER TABLE trials ADD COLUMN level INTEGER NOT NULL DEFAULT 0"
+
+    /** До версии 3 уровень внутри сессии не менялся: уровень пробы — уровень её сессии. */
+    const val SQL_2_3_FILL_LEVEL =
+        "UPDATE trials SET level = (SELECT s.level FROM exercise_sessions s WHERE s.id = trials.sessionId)"
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -45,5 +51,12 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2)
+    val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(SQL_2_3_TRIAL_LEVEL)
+            db.execSQL(SQL_2_3_FILL_LEVEL)
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
 }

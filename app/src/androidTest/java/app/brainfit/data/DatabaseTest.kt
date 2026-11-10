@@ -71,6 +71,7 @@ class DatabaseTest {
         rtMs = if (index == 0) null else 400L + index,
         errorType = null,
         isShaky = index == 1,
+        level = 2,
     )
 
     @Test

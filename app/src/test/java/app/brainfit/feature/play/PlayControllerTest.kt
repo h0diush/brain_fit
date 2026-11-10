@@ -1,12 +1,14 @@
 package app.brainfit.feature.play
 
+import app.brainfit.domain.adaptive.Adaptation
 import app.brainfit.domain.model.AppSettings
+import app.brainfit.domain.model.GameDifficulty
 import app.brainfit.domain.model.GameId
+import app.brainfit.domain.model.LevelChange
 import app.brainfit.domain.model.SessionMode
 import app.brainfit.domain.model.SessionStatus
 import app.brainfit.games.engine.ResumePolicy
 import app.brainfit.testing.FakeClock
-import app.brainfit.testing.FakeDifficultyRepository
 import app.brainfit.testing.FakeSessionRepository
 import app.brainfit.testing.FakeSettingsRepository
 import app.brainfit.testing.FakeShakeMonitor
@@ -28,11 +30,11 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayControllerTest {
 
-    private val repo = FakeSessionRepository()
+    /** Шульте (игра TapGame по умолчанию) уже откалибрована на уровне 2: калибровку проверяют отдельные тесты. */
+    private var repo = FakeSessionRepository(mapOf(GameId.SCHULTE to 2))
     private val clock = FakeClock()
     private val shake = FakeShakeMonitor()
     private var settings = FakeSettingsRepository()
-    private var difficulty = FakeDifficultyRepository()
 
     /** То, что лежало бы в SavedStateHandle. */
     private var savedDraftId: Long? = null
@@ -40,21 +42,31 @@ class PlayControllerTest {
     private fun controller(
         game: TapGame = TapGame(rounds = 2, target = 2),
         seed: Long = 1,
+        mode: SessionMode = SessionMode.FREE,
+        workoutId: Long? = null,
     ): PlayController<TapParams, TapState, TapInput> = PlayController(
         game = game,
-        mode = SessionMode.FREE,
+        mode = mode,
         // Unconfined: запущенные корутины выполняются сразу, тест идёт как обычный код.
         scope = TestScope(UnconfinedTestDispatcher()),
         sessions = repo,
-        difficulty = difficulty,
+        difficulty = repo,
         settings = settings,
         shake = shake,
         clock = clock,
         wallClock = clock,
         seed = seed,
+        workoutId = workoutId,
         draftId = savedDraftId,
         onDraftId = { savedDraftId = it },
     )
+
+    /** Целая сессия из одинаковых раундов: каждый раунд — эти нажатия. */
+    private fun playSession(game: TapGame, vararg inputs: TapInput): PlayUiState<TapState> {
+        val c = controller(game)
+        repeat(game.roundsPerSession(1)) { c.playRound(*inputs) }
+        return c.state.value
+    }
 
     private fun PlayController<TapParams, TapState, TapInput>.playRound(vararg inputs: TapInput) {
         startRound()
@@ -79,12 +91,127 @@ class PlayControllerTest {
 
     @Test
     fun levelComesFromDifficultyOrStartLevel() {
+        repo = FakeSessionRepository()
         assertEquals(2, controller().state.value.level)
-        difficulty = FakeDifficultyRepository(mapOf(GameId.SCHULTE to 3))
+        repo = FakeSessionRepository(mapOf(GameId.SCHULTE to 3))
         assertEquals(3, controller().state.value.level)
         // Уровень из базы вне таблицы игры зажимается в её границы.
-        difficulty = FakeDifficultyRepository(mapOf(GameId.SCHULTE to 9))
+        repo = FakeSessionRepository(mapOf(GameId.SCHULTE to 9))
         assertEquals(3, controller().state.value.level)
+    }
+
+    @Test
+    fun firstSessionsCalibrateLevelAfterEveryRound() {
+        repo = FakeSessionRepository()
+        val game = TapGame(rounds = 3, target = 2)
+        val c = controller(game)
+        assertTrue(c.state.value.calibration)
+        assertEquals(2, c.state.value.level)
+
+        c.playRound(TapInput.HIT, TapInput.HIT)
+        assertEquals(3, c.state.value.level)
+        assertEquals("Калибровка: уровень повышен до 3.", c.state.value.levelNote)
+        c.playRound(TapInput.MISS, TapInput.MISS)
+        assertEquals(2, c.state.value.level)
+        assertEquals("Калибровка: уровень понижен до 2.", c.state.value.levelNote)
+        c.playRound(TapInput.HIT, TapInput.MISS)
+
+        val ui = c.state.value
+        val row = repo.rows.single()
+        assertTrue(row.session.isCalibration)
+        // В сессии записан стартовый уровень, у проб — уровень их раунда.
+        assertEquals(2, row.session.level)
+        assertEquals(listOf(2, 2, 3, 3, 2, 2), row.trials.map { it.level })
+        // 0,5 < 0,65: после последнего раунда уровень опустился до 1.
+        assertEquals(GameDifficulty(GameId.SCHULTE, 1, calibrated = false), repo.difficulty[GameId.SCHULTE])
+        assertEquals(
+            listOf(2 to 3, 3 to 2, 2 to 1).map { (from, to) -> LevelChange(from, to, Adaptation.REASON_CALIBRATION) },
+            repo.changes.map { it.first },
+        )
+        // Каждый раунд оценён на своём уровне: (1 + 0 + 0,5) / 3.
+        assertEquals(0.5, ui.result!!.score, 1e-9)
+        assertEquals(listOf("Уровень понижен до 1.", "Калибровка: сыграно 1 из 2."), ui.levelLines)
+
+        // Вторая калибровочная сессия заканчивает калибровку.
+        val second = playSession(game, TapInput.HIT, TapInput.HIT)
+        assertEquals(listOf("Уровень повышен до 3.", "Калибровка закончена. Дальше уровень меняется по итогам нескольких сессий подряд."), second.levelLines)
+        assertEquals(GameDifficulty(GameId.SCHULTE, 3, calibrated = true), repo.difficulty[GameId.SCHULTE])
+
+        // Дальше — обычная сессия.
+        val third = controller(game)
+        assertFalse(third.state.value.calibration)
+        assertEquals(3, third.state.value.level)
+    }
+
+    @Test
+    fun shakyRoundDoesNotMoveCalibrationAndShakySessionDoesNotCount() {
+        repo = FakeSessionRepository()
+        val c = controller(TapGame(rounds = 1, target = 1))
+        shake.rms = 3f
+        c.playRound(TapInput.HIT)
+        assertEquals(2, repo.difficulty.getValue(GameId.SCHULTE).level)
+        assertTrue(repo.changes.isEmpty())
+        assertEquals(
+            listOf("Уровень 2: калибровка его не изменила.", "Из-за тряски сессия не засчитана в калибровку."),
+            c.state.value.levelLines,
+        )
+        assertEquals(0, kotlinx.coroutines.runBlocking { repo.adaptationInput(GameId.SCHULTE, 3) }.calibrationSessions)
+    }
+
+    @Test
+    fun calibrationLevelSurvivesProcessDeath() {
+        repo = FakeSessionRepository()
+        val first = controller(TapGame(rounds = 3, target = 1))
+        first.playRound(TapInput.HIT)
+        first.startRound()
+
+        val second = controller(TapGame(rounds = 3, target = 1), seed = 5)
+        val ui = second.state.value
+        assertTrue(ui.restored)
+        assertTrue(ui.calibration)
+        assertEquals(3, ui.level)
+        second.playRound(TapInput.HIT)
+        assertEquals(listOf(2, 3), repo.rows.single().trials.map { it.level })
+    }
+
+    @Test
+    fun threeGoodSessionsRaiseLevelAndResetWindow() {
+        val game = TapGame(rounds = 1, target = 1)
+        assertTrue(playSession(game, TapInput.HIT).levelLines.isEmpty())
+        assertTrue(playSession(game, TapInput.HIT).levelLines.isEmpty())
+        assertEquals(listOf("Уровень повышен до 3."), playSession(game, TapInput.HIT).levelLines)
+        assertEquals(GameDifficulty(GameId.SCHULTE, 3, calibrated = true), repo.difficulty[GameId.SCHULTE])
+        assertEquals(listOf(LevelChange(2, 3, Adaptation.REASON_WINDOW_UP)), repo.changes.map { it.first })
+        // На новом уровне окно пустое: одна сессия ничего не решает.
+        assertTrue(playSession(game, TapInput.MISS).levelLines.isEmpty())
+        assertEquals(3, repo.difficulty.getValue(GameId.SCHULTE).level)
+        assertFalse(repo.rows.any { it.session.isCalibration })
+    }
+
+    @Test
+    fun weakWindowLowersLevel() {
+        val game = TapGame(rounds = 1, target = 1)
+        repeat(2) { playSession(game, TapInput.MISS) }
+        assertEquals(listOf("Уровень понижен до 1."), playSession(game, TapInput.MISS).levelLines)
+        assertEquals(1, repo.difficulty.getValue(GameId.SCHULTE).level)
+    }
+
+    @Test
+    fun shakySessionIsLeftOutOfTheWindow() {
+        val game = TapGame(rounds = 1, target = 1)
+        repeat(2) { playSession(game, TapInput.HIT) }
+        shake.rms = 3f
+        assertTrue(playSession(game, TapInput.HIT).levelLines.isEmpty())
+        shake.rms = 0.1f
+        assertEquals(listOf("Уровень повышен до 3."), playSession(game, TapInput.HIT).levelLines)
+    }
+
+    @Test
+    fun sessionFromWorkoutKeepsWorkoutAndMode() {
+        controller(mode = SessionMode.QUICK, workoutId = 5).startRound()
+        val row = repo.rows.single()
+        assertEquals(5L, row.session.workoutId)
+        assertEquals(SessionMode.QUICK, row.session.mode)
     }
 
     @Test

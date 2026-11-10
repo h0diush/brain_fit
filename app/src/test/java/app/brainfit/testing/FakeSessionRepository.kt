@@ -1,17 +1,30 @@
 package app.brainfit.testing
 
+import app.brainfit.domain.model.AdaptationInput
+import app.brainfit.domain.model.GameDifficulty
+import app.brainfit.domain.model.GameId
+import app.brainfit.domain.model.LevelChange
 import app.brainfit.domain.model.NewSession
 import app.brainfit.domain.model.SessionDraft
+import app.brainfit.domain.model.SessionFinish
 import app.brainfit.domain.model.SessionStatus
 import app.brainfit.domain.model.SessionSummary
 import app.brainfit.domain.model.TrialRecord
+import app.brainfit.domain.repository.DifficultyRepository
 import app.brainfit.domain.repository.SessionRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.update
 import java.io.IOException
 
-/** База в памяти с теми же правилами, что у настоящей: писать можно только в черновик. */
-class FakeSessionRepository : SessionRepository {
+/**
+ * База в памяти с теми же правилами, что у настоящей: писать можно только в черновик, итог сессии
+ * пишется вместе с уровнем игры, окно адаптации считается так же, как запросом в Room.
+ *
+ * @param levels уровни игр, которые уже откалиброваны; остальные игры — без записи об уровне.
+ */
+class FakeSessionRepository(levels: Map<GameId, Int> = emptyMap()) : SessionRepository, DifficultyRepository {
 
     class Row(
         val id: Long,
@@ -27,6 +40,12 @@ class FakeSessionRepository : SessionRepository {
 
     val rows = mutableListOf<Row>()
 
+    private val states = MutableStateFlow(levels.mapValues { (id, level) -> GameDifficulty(id, level, calibrated = true) })
+    val difficulty: Map<GameId, GameDifficulty> get() = states.value
+
+    /** Смены уровня по порядку с временем записи. */
+    val changes = mutableListOf<Pair<LevelChange, Long>>()
+
     /** Имена операций, которые должны упасть по одному разу: "start", "saveRound", "finish", "abandon", "loadDraft". */
     val failOnce = mutableSetOf<String>()
 
@@ -41,6 +60,10 @@ class FakeSessionRepository : SessionRepository {
     override fun observeCompletedBetween(fromMillis: Long, toMillis: Long): Flow<List<SessionSummary>> = flowOf(emptyList())
 
     override fun observeCompletedCount(): Flow<Int> = flowOf(rows.count { it.status == SessionStatus.COMPLETED })
+
+    override suspend fun lastCompletedTrials(gameId: GameId): List<TrialRecord> =
+        rows.filter { it.session.gameId == gameId && it.status == SessionStatus.COMPLETED }
+            .maxByOrNull { it.session.startedAt }?.trials?.toList().orEmpty()
 
     override suspend fun startSession(session: NewSession): Long {
         maybeFail("start")
@@ -62,15 +85,19 @@ class FakeSessionRepository : SessionRepository {
         row.activeMs = activeMs
     }
 
-    override suspend fun finishSession(sessionId: Long, endedAt: Long, activeMs: Long, score: Double, metricsJson: String, isShaky: Boolean) {
+    override suspend fun finishSession(finish: SessionFinish) {
         maybeFail("finish")
-        val row = draft(sessionId)
+        val row = draft(finish.sessionId)
+        check(row.session.gameId == finish.difficulty.gameId)
         row.status = SessionStatus.COMPLETED
-        row.endedAt = endedAt
-        row.activeMs = activeMs
-        row.score = score
-        row.metricsJson = metricsJson
-        row.isShaky = isShaky
+        row.endedAt = finish.endedAt
+        row.activeMs = finish.activeMs
+        row.score = finish.score
+        row.metricsJson = finish.metricsJson
+        row.isShaky = finish.isShaky
+        val update = finish.difficulty
+        states.update { it + (update.gameId to GameDifficulty(update.gameId, update.level, update.calibrated)) }
+        changes += update.changes.map { it to finish.endedAt }
     }
 
     override suspend fun abandonSession(sessionId: Long, endedAt: Long, activeMs: Long) {
@@ -84,6 +111,25 @@ class FakeSessionRepository : SessionRepository {
     override suspend fun loadDraft(sessionId: Long): SessionDraft? {
         maybeFail("loadDraft")
         val row = rows.firstOrNull { it.id == sessionId && it.status == SessionStatus.IN_PROGRESS } ?: return null
-        return SessionDraft(row.id, row.session.gameId, row.session.level, row.activeMs, row.trials.toList())
+        return SessionDraft(row.id, row.session.gameId, row.session.level, row.activeMs, row.trials.toList(), row.session.isCalibration)
+    }
+
+    override fun observeStates(): Flow<Map<GameId, GameDifficulty>> = states
+
+    override suspend fun adaptationInput(gameId: GameId, windowLimit: Int): AdaptationInput {
+        val state = states.value[gameId]
+        val completed = rows.filter { it.session.gameId == gameId && it.status == SessionStatus.COMPLETED }
+        // Время смен уровня этой игры: в фейке игра одна на тест, поэтому берём все смены.
+        val lastChange = changes.maxOfOrNull { it.second } ?: Long.MIN_VALUE
+        val window = if (state == null) {
+            emptyList()
+        } else {
+            completed
+                .filter { !it.session.isCalibration && !it.isShaky && it.session.level == state.level && it.endedAt!! > lastChange }
+                .sortedByDescending { it.endedAt }
+                .take(windowLimit)
+                .map { it.score!! }
+        }
+        return AdaptationInput(state, completed.count { it.session.isCalibration && !it.isShaky }, window)
     }
 }

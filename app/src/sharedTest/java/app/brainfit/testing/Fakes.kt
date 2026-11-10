@@ -3,6 +3,7 @@ package app.brainfit.testing
 import app.brainfit.core.sensors.ShakeMonitor
 import app.brainfit.core.time.MonotonicClock
 import app.brainfit.core.time.WallClock
+import app.brainfit.domain.model.AdaptationInput
 import app.brainfit.domain.model.AppSettings
 import app.brainfit.domain.model.GameDifficulty
 import app.brainfit.domain.model.GameId
@@ -46,7 +47,11 @@ class FakeSettingsRepository(initial: AppSettings = AppSettings()) : SettingsRep
     override suspend fun setShakeDetectorEnabled(enabled: Boolean) = state.update { it.copy(shakeDetectorEnabled = enabled) }
 }
 
-class FakeDifficultyRepository(levels: Map<GameId, Int> = emptyMap()) : DifficultyRepository {
-    private val state = MutableStateFlow(levels.mapValues { (id, level) -> GameDifficulty(id, level, calibrated = true) })
+/** Уровни без истории: окно адаптации всегда пустое. Записанные уровни сюда не возвращаются. */
+class FakeDifficultyRepository(levels: Map<GameId, Int> = emptyMap(), calibrated: Boolean = true) : DifficultyRepository {
+    private val state = MutableStateFlow(levels.mapValues { (id, level) -> GameDifficulty(id, level, calibrated) })
     override fun observeStates(): Flow<Map<GameId, GameDifficulty>> = state
+
+    override suspend fun adaptationInput(gameId: GameId, windowLimit: Int) =
+        AdaptationInput(state.value[gameId], calibrationSessions = 0, window = emptyList())
 }

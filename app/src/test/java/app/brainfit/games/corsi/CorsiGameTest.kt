@@ -53,6 +53,23 @@ class CorsiGameTest {
     }
 
     @Test
+    fun sessionStartsFromLastCorrectLengthOfPreviousSessionMinusOne() {
+        // Прошлой сессии нет — длина из таблицы уровня.
+        assertEquals(4, game.startLength(2, emptyList()))
+        // Последняя верная — 7 (ошибка на 8 после неё не считается): начинаем с 6.
+        val previous = listOf(trial(true, len = 6), trial(true, len = 7), trial(false, len = 8))
+        assertEquals(6, game.startLength(2, previous))
+        assertEquals(6, game.generate(2, Random(1), emptyList(), previous).cells.size)
+        // Длина 9 на 3×3 тоже возможна: клетки только не повторяются подряд.
+        assertEquals(8, game.generate(1, Random(1), emptyList(), listOf(trial(true, len = 9))).cells.size)
+        // Ничего не повторено — длина из таблицы; снизу — не короче 3.
+        assertEquals(4, game.startLength(2, listOf(trial(false, len = 6))))
+        assertEquals(3, game.startLength(2, listOf(trial(true, len = 3))))
+        // Внутри сессии длина подстраивается уже от перенесённой.
+        assertEquals(7, game.sequenceLength(2, history(true, true), previous))
+    }
+
+    @Test
     fun generation_10000PerLevel_noImmediateRepeats() {
         for (cfg in game.levels) {
             val total = cfg.gridSize * cfg.gridSize

@@ -69,6 +69,13 @@ interface Game<P, S : Any, I : Any> {
      */
     fun generate(level: Int, rng: Random, history: List<TrialResult>): P
 
+    /**
+     * То же, но с пробами прошлой сессии этой игры ([previous], пусто — сессий не было). Нужно играм, у которых
+     * что-то переносится между сессиями (Корси начинает с последней верной длины минус 1). По умолчанию не нужно.
+     */
+    fun generate(level: Int, rng: Random, history: List<TrialResult>, previous: List<TrialResult>): P =
+        generate(level, rng, history)
+
     fun initialState(params: P, level: Int): S
 
     /** Ответ игрока. */

@@ -74,11 +74,19 @@ class CorsiGame : Game<CorsiParams, CorsiState, CorsiTap> {
     override fun roundsPerSession(level: Int) = ROUNDS
 
     /**
-     * Длина очередной последовательности: начинаем со [CorsiLevel.startLength] и проигрываем историю сессии.
+     * Длина, с которой начинается сессия (ТЗ, 4.4): последняя верно повторённая длина прошлой сессии минус 1.
+     * Если прошлой сессии нет или в ней ничего не повторено — [CorsiLevel.startLength] уровня.
+     */
+    fun startLength(level: Int, previous: List<TrialResult>): Int =
+        previous.lastOrNull { it.correct }?.let { (lengthOf(it) - 1).coerceIn(MIN_LENGTH, MAX_LENGTH) }
+            ?: levels[level - 1].startLength
+
+    /**
+     * Длина очередной последовательности: начинаем со [startLength] и проигрываем историю сессии.
      * Каждая проба в истории — одна последовательность.
      */
-    fun sequenceLength(level: Int, history: List<TrialResult>): Int {
-        var length = levels[level - 1].startLength
+    fun sequenceLength(level: Int, history: List<TrialResult>, previous: List<TrialResult> = emptyList()): Int {
+        var length = startLength(level, previous)
         var successes = 0
         var failures = 0
         for (trial in history) {
@@ -99,9 +107,12 @@ class CorsiGame : Game<CorsiParams, CorsiState, CorsiTap> {
         return length
     }
 
-    override fun generate(level: Int, rng: Random, history: List<TrialResult>): CorsiParams {
+    override fun generate(level: Int, rng: Random, history: List<TrialResult>): CorsiParams =
+        generate(level, rng, history, emptyList())
+
+    override fun generate(level: Int, rng: Random, history: List<TrialResult>, previous: List<TrialResult>): CorsiParams {
         val cfg = levels[level - 1]
-        val length = sequenceLength(level, history)
+        val length = sequenceLength(level, history, previous)
         val total = cfg.gridSize * cfg.gridSize
         val cells = ArrayList<Int>(length)
         var previous = -1

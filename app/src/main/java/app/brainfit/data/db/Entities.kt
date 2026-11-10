@@ -39,6 +39,7 @@ data class ExerciseSessionEntity(
     val endedAt: Long?,
     /** Активное время без пауз. */
     val activeMs: Long,
+    /** Уровень, с которого сессия началась. Уровень каждого раунда — в trials.level. */
     val level: Int,
     /** 0..1; у брошенной сессии оценки нет. */
     val score: Double?,
@@ -76,6 +77,8 @@ data class TrialEntity(
     val isShaky: Boolean,
     /** Номер раунда в сессии с нуля: по нему сессия продолжается после смерти процесса. С версии 2. */
     @ColumnInfo(defaultValue = "0") val round: Int = 0,
+    /** Уровень раунда: на калибровке он меняется между раундами. С версии 3. */
+    @ColumnInfo(defaultValue = "0") val level: Int,
 )
 
 @Entity(tableName = "difficulty_states")

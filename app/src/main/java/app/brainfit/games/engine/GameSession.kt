@@ -9,25 +9,38 @@ data class CompletedRound(
     val trials: List<TrialResult>,
     /** Активное время раунда без пауз. */
     val activeNanos: Long,
+    /** Уровень, на котором раунд игрался. */
+    val level: Int,
 )
 
 /**
  * Одна сессия игры: раунды по очереди, пауза, перезапуск раунда. Чистый Kotlin, без потоков:
  * все вызовы — с одного потока. Время приходит снаружи (монотонные часы или время кадра).
  *
+ * Уровень обычно один на всю сессию. На калибровке хост меняет его между раундами через [changeLevel].
+ *
+ * @param level уровень первого раунда; число раундов берётся по нему.
  * @param completed уже сыгранные раунды — когда сессию продолжают после смерти процесса.
+ * @param previous пробы прошлой сессии этой игры — для того, что переносится между сессиями (длина в Корси).
  */
 class GameSession<P, S : Any, I : Any>(
     private val game: Game<P, S, I>,
-    val level: Int,
+    level: Int,
     private val seed: Long,
     completed: List<CompletedRound> = emptyList(),
+    private val previous: List<TrialResult> = emptyList(),
 ) {
     enum class Phase { READY, RUNNING, PAUSED, FINISHED }
 
     init {
-        require(level in 1..game.levels.size) { "Уровень $level вне таблицы уровней игры ${game.id}" }
+        requireLevel(level)
     }
+
+    val startLevel: Int = level
+
+    /** Уровень текущего раунда, а между раундами — следующего. */
+    var level: Int = level
+        private set
 
     val totalRounds: Int = game.roundsPerSession(level).also {
         require(it > 0) { "В сессии должен быть хотя бы один раунд" }
@@ -50,9 +63,16 @@ class GameSession<P, S : Any, I : Any>(
     private var lastActive = 0L
     private var attempt = 0
 
+    /** Уровень следующего раунда. Только между раундами: посреди раунда задание уже выдано. */
+    fun changeLevel(newLevel: Int) {
+        check(phase == Phase.READY || phase == Phase.FINISHED) { "Уровень меняется только между раундами, сейчас $phase" }
+        requireLevel(newLevel)
+        level = newLevel
+    }
+
     fun startRound(nowNanos: Long) {
         check(phase == Phase.READY) { "Раунд можно начать только из READY, сейчас $phase" }
-        val params = game.generate(level, Random(roundSeed()), history())
+        val params = game.generate(level, Random(roundSeed()), history(), previous)
         state = game.initialState(params, level)
         stopwatch.restart(nowNanos)
         lastActive = 0L
@@ -95,9 +115,25 @@ class GameSession<P, S : Any, I : Any>(
 
     fun history(): List<TrialResult> = rounds.flatMap { it.trials }
 
+    /**
+     * Оценка сессии. Если уровень не менялся — оценка игры по всем пробам. Если менялся (калибровка) —
+     * каждый отрезок на одном уровне оценивается по своему уровню, score — среднее по раундам,
+     * а метрики — по всем пробам с уровнем последнего раунда.
+     */
     fun score(): SessionScore {
         check(phase == Phase.FINISHED) { "Оценка считается только у завершённой сессии" }
-        return game.score(history(), level)
+        val runs = mutableListOf<MutableList<CompletedRound>>()
+        for (round in rounds) {
+            if (runs.lastOrNull()?.last()?.level == round.level) runs.last() += round else runs += mutableListOf(round)
+        }
+        if (runs.size <= 1) return game.score(history(), rounds.firstOrNull()?.level ?: startLevel)
+        val weighted = runs.sumOf { run -> game.score(run.flatMap { it.trials }, run.first().level).score * run.size }
+        val all = game.score(history(), rounds.last().level)
+        return SessionScore((weighted / rounds.size).coerceIn(0.0, 1.0), all.metrics)
+    }
+
+    private fun requireLevel(level: Int) {
+        require(level in 1..game.levels.size) { "Уровень $level вне таблицы уровней игры ${game.id}" }
     }
 
     private fun runningState(): S? = if (phase == Phase.RUNNING) state else null
@@ -111,7 +147,7 @@ class GameSession<P, S : Any, I : Any>(
     private fun completeIfFinished(): CompletedRound? {
         val current = state ?: return null
         if (!game.isFinished(current)) return null
-        val round = CompletedRound(game.trials(current), lastActive)
+        val round = CompletedRound(game.trials(current), lastActive, level)
         rounds += round
         state = null
         attempt = 0

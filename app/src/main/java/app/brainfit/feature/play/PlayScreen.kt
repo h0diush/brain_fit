@@ -158,6 +158,7 @@ fun <S : Any, I : Any> PlayScreen(
                     title = "Раунд ${ui.round + 1} из ${ui.totalRounds}",
                     lines = listOfNotNull(
                         ui.roundSummary?.let { "Прошлый раунд: $it" },
+                        ui.levelNote,
                         if (ui.restored) "Продолжаем с того раунда, на котором остановились." else null,
                     ),
                 ) {
@@ -179,7 +180,7 @@ fun <S : Any, I : Any> PlayScreen(
 
                 ui.phase == PlayPhase.FINISHED -> Panel(
                     title = ui.result?.let { "Результат: ${(it.score * 100).roundToInt()} %" } ?: "Сессия завершена",
-                    lines = ui.resultLines + listOfNotNull(
+                    lines = ui.levelLines + ui.resultLines + listOfNotNull(
                         if (ui.shakySession) {
                             "Сильно трясло. Сессия сохранена в истории, но на уровень и рекорды скорости не повлияет."
                         } else {
@@ -258,7 +259,8 @@ private fun Header(title: String, ui: PlayUiState<*>, onPause: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleLarge)
             if (ui.totalRounds > 0 && ui.phase != PlayPhase.FINISHED) {
-                MutedText("Раунд ${ui.round + 1} из ${ui.totalRounds} · уровень ${ui.level}")
+                val calibration = if (ui.calibration) " · калибровка" else ""
+                MutedText("Раунд ${ui.round + 1} из ${ui.totalRounds} · уровень ${ui.level}$calibration")
             }
         }
         if (ui.phase == PlayPhase.RUNNING && ui.error == null) {
