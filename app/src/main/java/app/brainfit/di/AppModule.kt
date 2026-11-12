@@ -17,10 +17,12 @@ import app.brainfit.data.db.SessionDao
 import app.brainfit.data.db.TrialDao
 import app.brainfit.data.db.WorkoutDao
 import app.brainfit.data.repository.DifficultyRepositoryImpl
+import app.brainfit.data.repository.ProgressRepositoryImpl
 import app.brainfit.data.repository.SessionRepositoryImpl
 import app.brainfit.data.repository.SettingsRepositoryImpl
 import app.brainfit.data.repository.WorkoutRepositoryImpl
 import app.brainfit.domain.repository.DifficultyRepository
+import app.brainfit.domain.repository.ProgressRepository
 import app.brainfit.domain.repository.SessionRepository
 import app.brainfit.domain.repository.SettingsRepository
 import app.brainfit.domain.repository.WorkoutRepository
@@ -80,6 +82,9 @@ abstract class RepositoryModule {
 
     @Binds
     abstract fun bindDifficulty(impl: DifficultyRepositoryImpl): DifficultyRepository
+
+    @Binds
+    abstract fun bindProgress(impl: ProgressRepositoryImpl): ProgressRepository
 
     @Binds
     abstract fun bindWorkouts(impl: WorkoutRepositoryImpl): WorkoutRepository

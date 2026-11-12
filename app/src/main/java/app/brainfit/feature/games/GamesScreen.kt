@@ -30,8 +30,12 @@ import app.brainfit.games.engine.START_LEVEL
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import app.brainfit.domain.progress.Progress
+import app.brainfit.domain.progress.ProgressMetrics
+import app.brainfit.domain.repository.ProgressRepository
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import javax.inject.Inject
 
 /** levels == null — данные ещё читаются из базы. */
@@ -39,17 +43,30 @@ data class GamesUiState(
     val levels: Map<GameId, GameDifficulty>? = null,
     /** Игры, которые уже можно запустить. */
     val playable: Set<GameId> = emptySet(),
+    /** Рекорд главной метрики на текущем уровне; игры без рекорда здесь нет. */
+    val records: Map<GameId, String> = emptyMap(),
+    val error: String? = null,
 )
 
 @HiltViewModel
 class GamesViewModel @Inject constructor(
     difficulty: DifficultyRepository,
+    progress: ProgressRepository,
     registry: GameRegistry,
 ) : ViewModel() {
     private val playable = registry.playable
 
-    val state: StateFlow<GamesUiState> = difficulty.observeStates()
-        .map { GamesUiState(levels = it, playable = playable) }
+    val state: StateFlow<GamesUiState> = combine(difficulty.observeStates(), progress.observeCompleted()) { levels, sessions ->
+        val byGame = sessions.groupBy { it.gameId }
+        val records = levels.values.mapNotNull { state ->
+            val metric = ProgressMetrics.main(state.gameId)
+            Progress.record(byGame[state.gameId].orEmpty(), metric, state.level)
+                ?.let { state.gameId to "Рекорд уровня ${state.level}: ${metric.title.lowercase()} ${metric.format(it.value)}" }
+        }.toMap()
+        GamesUiState(levels = levels, playable = playable, records = records)
+    }
+        // Ошибку чтения не глотаем: показываем над карточками.
+        .catch { e -> emit(GamesUiState(levels = null, playable = playable, error = "Не удалось прочитать историю: ${e.message ?: e.javaClass.simpleName}")) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), GamesUiState(playable = playable))
 }
 
@@ -61,6 +78,9 @@ fun GamesScreen(onPlay: (GameId) -> Unit, vm: GamesViewModel = hiltViewModel()) 
         contentPadding = PaddingValues(Dimens.screenPadding),
         verticalArrangement = Arrangement.spacedBy(Dimens.gap),
     ) {
+        state.error?.let { error ->
+            item { Text(error, color = BrainTheme.colors.error, style = MaterialTheme.typography.bodyLarge) }
+        }
         items(GameCatalog.all, key = { it.id }) { game ->
             val ready = game.id in state.playable
             // Нажимаются только готовые игры; остальные честно подписаны.
@@ -91,6 +111,7 @@ fun GamesScreen(onPlay: (GameId) -> Unit, vm: GamesViewModel = hiltViewModel()) 
                         color = if (ready && level != null) BrainTheme.colors.accent else BrainTheme.colors.textSecondary,
                     )
                 }
+                state.records[game.id]?.let { MutedText(it) }
             }
         }
     }

@@ -51,6 +51,7 @@ class PlayControllerTest {
         scope = TestScope(UnconfinedTestDispatcher()),
         sessions = repo,
         difficulty = repo,
+        progress = repo,
         settings = settings,
         shake = shake,
         clock = clock,
@@ -566,5 +567,31 @@ class PlayControllerTest {
         assertNull(c.state.value.error)
         assertTrue(c.state.value.restored)
         assertEquals(1, c.state.value.round)
+    }
+
+    @Test
+    fun resultComparesWithPreviousSessionsOnTheSameLevel() {
+        // У Струпа главная метрика — точность, а TapGame её и пишет.
+        repo = FakeSessionRepository(mapOf(GameId.STROOP to 2))
+        val game = TapGame(rounds = 1, target = 2, id = GameId.STROOP)
+        assertEquals(listOf("Первая сессия на уровне 2 — сравнивать пока не с чем."), playSession(game, TapInput.HIT, TapInput.HIT).compareLines)
+        assertEquals(
+            listOf("Точность в прошлый раз — 100 %, сейчас хуже.", "Рекорд уровня 2 — 100 %."),
+            playSession(game, TapInput.HIT, TapInput.MISS).compareLines,
+        )
+    }
+
+    @Test
+    fun failedHistoryReadIsShownAndRetried() {
+        repo = FakeSessionRepository(mapOf(GameId.STROOP to 2))
+        val c = controller(TapGame(rounds = 1, target = 1, id = GameId.STROOP))
+        repo.failOnce += "completed"
+        c.playRound(TapInput.HIT)
+        assertEquals("Не удалось сохранить результат: диск недоступен", c.state.value.error)
+        assertEquals(SessionStatus.IN_PROGRESS, repo.rows.single().status)
+        c.retry()
+        assertNull(c.state.value.error)
+        assertEquals(PlayPhase.FINISHED, c.state.value.phase)
+        assertEquals(listOf("Первая сессия на уровне 2 — сравнивать пока не с чем."), c.state.value.compareLines)
     }
 }

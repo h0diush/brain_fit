@@ -36,22 +36,21 @@ import app.brainfit.games.engine.Fmt
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.time.Duration
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
+import app.brainfit.core.time.LocalDays
+import app.brainfit.domain.progress.Progress
+import app.brainfit.domain.progress.Streak
+import app.brainfit.domain.repository.ProgressRepository
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 data class HomeUiState(
@@ -59,48 +58,43 @@ data class HomeUiState(
     val today: List<SessionSummary>? = null,
     /** Незавершённая тренировка сегодняшнего дня. */
     val active: Workout? = null,
+    /** null — ещё читается. */
+    val streak: Streak? = null,
     val error: String? = null,
     val busy: Boolean = false,
 )
 
-private data class Today(val sessions: List<SessionSummary>, val active: Workout?)
+private data class Today(val sessions: List<SessionSummary>, val active: Workout?, val streak: Streak)
 
 private data class LocalState(val error: String? = null, val busy: Boolean = false)
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     sessions: SessionRepository,
+    progress: ProgressRepository,
     private val workouts: WorkoutRepository,
-    private val wallClock: WallClock,
+    wallClock: WallClock,
 ) : ViewModel() {
 
-    private val zone: ZoneId = ZoneId.systemDefault()
+    private val days = LocalDays(wallClock)
     private val local = MutableStateFlow(LocalState())
 
-    /**
-     * Текущая дата; меняется в полночь, даже если экран открыт. Пока экран не виден, поток стоит,
-     * а при возвращении дата считается заново.
-     */
-    private val days: Flow<LocalDate> = flow {
-        while (true) {
-            val now = Instant.ofEpochMilli(wallClock.nowMillis()).atZone(zone)
-            emit(now.toLocalDate())
-            val midnight = now.toLocalDate().plusDays(1).atStartOfDay(zone)
-            delay(Duration.between(now, midnight).toMillis() + 1_000)
-        }
-    }.distinctUntilChanged()
-
     @OptIn(ExperimentalCoroutinesApi::class)
-    private val today: Flow<Today> = days
+    private val today: Flow<Today> = days.observe()
         // Вчерашняя незавершённая тренировка больше не продолжается.
         .onEach { day -> guarded("Не удалось закрыть вчерашнюю тренировку") { workouts.abandonStale(day.toEpochDay()) } }
         .flatMapLatest { day ->
-            val (from, to) = bounds(day)
-            combine(sessions.observeCompletedBetween(from, to), workouts.observeActive(day.toEpochDay()), ::Today)
+            val (from, to) = days.bounds(day)
+            val streak = progress.observeCompleted().map { all ->
+                Progress.streak(all.map { days.dayOf(it.startedAt).toEpochDay() }, day.toEpochDay())
+            }
+            combine(sessions.observeCompletedBetween(from, to), workouts.observeActive(day.toEpochDay()), streak, ::Today)
         }
+        // Ошибку чтения не глотаем: показываем на главной.
+        .catch { e -> local.value = LocalState(error = "Не удалось прочитать историю: ${e.message ?: e.javaClass.simpleName}") }
 
     val state: StateFlow<HomeUiState> = combine(today, local) { t, l ->
-        HomeUiState(today = t.sessions, active = t.active, error = l.error, busy = l.busy)
+        HomeUiState(today = t.sessions, active = t.active, streak = t.streak, error = l.error, busy = l.busy)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
     /** Новая тренировка: подбор игр и запись. Незаконченная тренировка заменяется новой. */
@@ -109,8 +103,8 @@ class HomeViewModel @Inject constructor(
         local.value = LocalState(busy = true)
         viewModelScope.launch {
             guarded("Не удалось начать тренировку") {
-                val day = Instant.ofEpochMilli(wallClock.nowMillis()).atZone(zone).toLocalDate()
-                val (from, to) = bounds(day)
+                val day = days.today()
+                val (from, to) = days.bounds(day)
                 val games = WorkoutPlanner.plan(mode, workouts.planningInput(from, to))
                 val id = workouts.create(day.toEpochDay(), mode, games)
                 local.value = LocalState()
@@ -118,9 +112,6 @@ class HomeViewModel @Inject constructor(
             }
         }
     }
-
-    private fun bounds(day: LocalDate): Pair<Long, Long> =
-        day.atStartOfDay(zone).toInstant().toEpochMilli() to day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
 
     /** Ошибку не глотаем: показываем на главной. */
     private suspend fun guarded(what: String, block: suspend () -> Unit) {
@@ -163,6 +154,7 @@ fun HomeScreen(onOpenWorkout: (Long) -> Unit, vm: HomeViewModel = hiltViewModel(
             if (active != null) MutedText("Новая тренировка заменит незаконченную.")
             state.error?.let { Text(it, color = BrainTheme.colors.error, style = MaterialTheme.typography.bodyLarge) }
         }
+        state.streak?.let { StreakCard(it) }
         BrainCard {
             SectionTitle("Сегодня")
             val today = state.today
@@ -188,4 +180,25 @@ private fun sessionLine(session: SessionSummary): String {
         SessionMode.FREE -> "свободная игра"
     }
     return listOfNotNull("уровень ${session.level}", session.score?.let { Fmt.percent(it) }, mode).joinToString(" · ")
+}
+
+/** Серия дней (ТЗ, раздел 7): без наказаний — пропуск просто начинает её заново. */
+@Composable
+fun StreakCard(streak: Streak) {
+    BrainCard {
+        SectionTitle("Серия")
+        when {
+            streak.best == 0 -> MutedText("Серия начнётся с первой сыгранной сессии.")
+            streak.current > 0 -> {
+                Text("${Fmt.days(streak.current)} подряд", style = MaterialTheme.typography.titleLarge, color = BrainTheme.colors.accent)
+                MutedText(
+                    listOfNotNull(
+                        "Лучшая серия — ${Fmt.days(streak.best)}.",
+                        if (streak.playedToday) null else "Сегодня ещё не играли.",
+                    ).joinToString(" "),
+                )
+            }
+            else -> MutedText("Сейчас серии нет — она начнётся с сегодняшней сессии. Лучшая — ${Fmt.days(streak.best)}.")
+        }
+    }
 }

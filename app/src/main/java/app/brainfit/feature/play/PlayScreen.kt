@@ -180,7 +180,7 @@ fun <S : Any, I : Any> PlayScreen(
 
                 ui.phase == PlayPhase.FINISHED -> Panel(
                     title = ui.result?.let { "Результат: ${(it.score * 100).roundToInt()} %" } ?: "Сессия завершена",
-                    lines = ui.levelLines + ui.resultLines + listOfNotNull(
+                    lines = ui.levelLines + ui.resultLines + ui.compareLines + listOfNotNull(
                         if (ui.shakySession) {
                             "Сильно трясло. Сессия сохранена в истории, но на уровень и рекорды скорости не повлияет."
                         } else {

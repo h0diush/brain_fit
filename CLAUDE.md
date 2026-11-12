@@ -6,12 +6,14 @@
 ## Где мы
 
 Сделаны этапы 1 (фундамент), 2 (игровой движок: `Game`, `GameSession`, `PlayController`, экран-хост, запись,
-детектор тряски), 3 (Шульте, математический спринт, Корси), 4 (Струп, N-back, «Двойное решение») и 5 (калибровка,
-адаптация уровней, быстрая и стандартная тренировки, «Продолжить»; Room версии 3). Дальше этап 6 — прогресс: графики,
-рекорды, история уровней, серия дней. Работать строго по этапам, после каждого — сборка, тесты, отчёт.
+детектор тряски), 3 (Шульте, математический спринт, Корси), 4 (Струп, N-back, «Двойное решение»), 5 (калибровка,
+адаптация уровней, быстрая и стандартная тренировки, «Продолжить»; Room версии 3) и 6 (прогресс: графики на Vico,
+рекорды по уровням, история уровней, серия дней, сравнение на экране результата). Дальше этап 7 — полировка и релиз:
+настройки, экспорт и импорт, вибро и звук, подгонка порогов. Работать строго по этапам, после каждого — сборка, тесты, отчёт.
 
 Уровень игры ведёт `PlayController` по правилам `domain/adaptive/Adaptation` и пишет его вместе с итогом сессии
 (`SessionRepository.finishSession`). Подбор игр в тренировку — `domain/workout/WorkoutPlanner`.
+Прогресс считается на лету из сессий (`domain/progress/Progress`, метрики игр — `ProgressMetrics`), в базе не хранится.
 
 Новая игра = логика в `games/<имя>/` (реализация `Game`, чистый Kotlin, тест с массовым прогоном генератора) +
 экран раунда в `feature/play/game/` + модуль с инструкцией в `GameModules.kt` и строка в `GameRegistry.ALL`.
@@ -37,7 +39,7 @@ gradlew.bat connectedDebugAndroidTest  # Room на устройстве (app/src
 
 ```
 core/designsystem/   Palette (токены, чистый Kotlin), Theme, Components
-core/time/           MonotonicClock, WallClock, Stopwatch, FrameClock
+core/time/           MonotonicClock, WallClock, Stopwatch, FrameClock, LocalDays (местные даты)
 core/sensors/        ShakeMeter, ShakeConfig (чистый Kotlin), SensorShakeMonitor
 core/util/           Json (запись JSON без библиотек)
 games/engine/        Game, GameSession, TrialResult, SessionScore, LevelConfig, Fmt, Stats (медиана, d′)
@@ -47,6 +49,7 @@ data/repository/     реализации репозиториев
 domain/model/        перечисления, AppSettings, GameCatalog, модели сессий, уровней и тренировок
 domain/adaptive/     Adaptation, AdaptiveConfig (калибровка и окно)
 domain/workout/      WorkoutPlanner (подбор игр)
+domain/progress/     Progress (рекорды, серия, история уровней, сравнение), ProgressMetrics
 domain/repository/   интерфейсы репозиториев
 di/                  AppModule (Room, DataStore), RepositoryModule
 feature/             navigation, home, games, progress, settings, workout, play (хост игры, play/game — экраны раундов)

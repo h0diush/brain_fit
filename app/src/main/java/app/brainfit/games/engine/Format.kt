@@ -19,4 +19,22 @@ object Fmt {
         val seconds = total % 60
         return if (minutes == 0L) "$seconds с" else "$minutes мин ${seconds.toString().padStart(2, '0')} с"
     }
+
+    /** Русское множественное число: plural(1, "день", "дня", "дней") — «день», 3 — «дня», 11 — «дней». */
+    fun plural(n: Int, one: String, few: String, many: String): String {
+        val mod100 = Math.floorMod(n, 100)
+        val mod10 = Math.floorMod(n, 10)
+        return when {
+            mod100 in 11..14 -> many
+            mod10 == 1 -> one
+            mod10 in 2..4 -> few
+            else -> many
+        }
+    }
+
+    /** «1 день», «3 дня», «5 дней». */
+    fun days(n: Int): String = "$n ${plural(n, "день", "дня", "дней")}"
+
+    /** «1 сессия», «3 сессии», «5 сессий». */
+    fun sessions(n: Int): String = "$n ${plural(n, "сессия", "сессии", "сессий")}"
 }

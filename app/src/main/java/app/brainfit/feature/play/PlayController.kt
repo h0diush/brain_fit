@@ -17,7 +17,10 @@ import app.brainfit.domain.model.SessionDraft
 import app.brainfit.domain.model.SessionFinish
 import app.brainfit.domain.model.SessionMode
 import app.brainfit.domain.model.TrialRecord
+import app.brainfit.domain.progress.Progress
+import app.brainfit.domain.progress.ProgressMetrics
 import app.brainfit.domain.repository.DifficultyRepository
+import app.brainfit.domain.repository.ProgressRepository
 import app.brainfit.domain.repository.SessionRepository
 import app.brainfit.domain.repository.SettingsRepository
 import app.brainfit.games.engine.CompletedRound
@@ -72,6 +75,8 @@ data class PlayUiState<S>(
     val levelNote: String? = null,
     /** Что стало с уровнем по итогам сессии — на экране результата. Скрытых изменений нет (ТЗ, раздел 6). */
     val levelLines: List<String> = emptyList(),
+    /** Сравнение с прошлыми сессиями на том же уровне — на экране результата. */
+    val compareLines: List<String> = emptyList(),
     /** Ошибка сохранения или загрузки. Пока она показана, ввод не принимается; есть «Повторить». */
     val error: String? = null,
     val closed: Boolean = false,
@@ -99,6 +104,7 @@ class PlayController<P, S : Any, I : Any>(
     private val scope: CoroutineScope,
     private val sessions: SessionRepository,
     private val difficulty: DifficultyRepository,
+    private val progress: ProgressRepository,
     private val settings: SettingsRepository,
     private val shake: ShakeMonitor,
     private val clock: MonotonicClock,
@@ -357,6 +363,16 @@ class PlayController<P, S : Any, I : Any>(
         } else {
             adaptationResult(s, input, score.score, shakySession)
         }
+        // Прошлые сессии читаем до записи итога: эта в них не попадёт.
+        val metric = ProgressMetrics.main(game.id)
+        val compareLines = Progress.comparison(
+            metric = metric,
+            value = score.metrics[metric.key],
+            level = s.startLevel,
+            isCalibration = calibration,
+            isShaky = shakySession,
+            previous = progress.completed(game.id),
+        )
         sessions.finishSession(
             SessionFinish(
                 sessionId = id,
@@ -383,6 +399,7 @@ class PlayController<P, S : Any, I : Any>(
                 levelNote = null,
                 resultLines = game.resultLines(score),
                 levelLines = levelLines,
+                compareLines = compareLines,
             )
         }
     }

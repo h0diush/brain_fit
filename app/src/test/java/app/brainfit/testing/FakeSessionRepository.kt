@@ -1,16 +1,20 @@
 package app.brainfit.testing
 
+import app.brainfit.core.util.Json
 import app.brainfit.domain.model.AdaptationInput
 import app.brainfit.domain.model.GameDifficulty
 import app.brainfit.domain.model.GameId
+import app.brainfit.domain.model.LevelChangeRecord
 import app.brainfit.domain.model.LevelChange
 import app.brainfit.domain.model.NewSession
+import app.brainfit.domain.model.ProgressSession
 import app.brainfit.domain.model.SessionDraft
 import app.brainfit.domain.model.SessionFinish
 import app.brainfit.domain.model.SessionStatus
 import app.brainfit.domain.model.SessionSummary
 import app.brainfit.domain.model.TrialRecord
 import app.brainfit.domain.repository.DifficultyRepository
+import app.brainfit.domain.repository.ProgressRepository
 import app.brainfit.domain.repository.SessionRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +28,7 @@ import java.io.IOException
  *
  * @param levels уровни игр, которые уже откалиброваны; остальные игры — без записи об уровне.
  */
-class FakeSessionRepository(levels: Map<GameId, Int> = emptyMap()) : SessionRepository, DifficultyRepository {
+class FakeSessionRepository(levels: Map<GameId, Int> = emptyMap()) : SessionRepository, DifficultyRepository, ProgressRepository {
 
     class Row(
         val id: Long,
@@ -132,4 +136,32 @@ class FakeSessionRepository(levels: Map<GameId, Int> = emptyMap()) : SessionRepo
         }
         return AdaptationInput(state, completed.count { it.session.isCalibration && !it.isShaky }, window)
     }
+
+    private fun Row.toProgress() = ProgressSession(
+        id = id,
+        gameId = session.gameId,
+        mode = session.mode,
+        startedAt = session.startedAt,
+        level = session.level,
+        isCalibration = session.isCalibration,
+        isShaky = isShaky,
+        score = score,
+        metrics = Json.parseObject(metricsJson).mapNotNull { (k, v) -> (v as? Number)?.let { k to it.toDouble() } }.toMap(),
+    )
+
+    private fun completedRows() = rows.filter { it.status == SessionStatus.COMPLETED }.sortedBy { it.session.startedAt }
+
+    override fun observeCompleted(): Flow<List<ProgressSession>> = flowOf(completedRows().map { it.toProgress() })
+
+    override fun observeCompleted(gameId: GameId): Flow<List<ProgressSession>> =
+        flowOf(completedRows().filter { it.session.gameId == gameId }.map { it.toProgress() })
+
+    override suspend fun completed(gameId: GameId): List<ProgressSession> {
+        maybeFail("completed")
+        return completedRows().filter { it.session.gameId == gameId }.map { it.toProgress() }
+    }
+
+    /** Смены уровня здесь хранятся без игры ([changes]); контроллеру игры они не нужны. */
+    override fun observeLevelChanges(gameId: GameId): Flow<List<LevelChangeRecord>> =
+        throw UnsupportedOperationException("В подделке нет истории уровней по играм")
 }

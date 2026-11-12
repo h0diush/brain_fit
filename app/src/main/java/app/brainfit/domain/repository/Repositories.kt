@@ -4,8 +4,10 @@ import app.brainfit.domain.model.AdaptationInput
 import app.brainfit.domain.model.AppSettings
 import app.brainfit.domain.model.GameDifficulty
 import app.brainfit.domain.model.GameId
+import app.brainfit.domain.model.LevelChangeRecord
 import app.brainfit.domain.model.NewSession
 import app.brainfit.domain.model.PlanningInput
+import app.brainfit.domain.model.ProgressSession
 import app.brainfit.domain.model.SessionDraft
 import app.brainfit.domain.model.SessionFinish
 import app.brainfit.domain.model.SessionSummary
@@ -80,4 +82,19 @@ interface WorkoutRepository {
 
     /** Незавершённые тренировки прошлых дней — брошенные: «Продолжить» живёт до конца суток. */
     suspend fun abandonStale(today: Long)
+}
+
+/** Данные для прогресса. Всё считается из сырых сессий и смен уровня; ничего не хранится отдельно. */
+interface ProgressRepository {
+    /** Все завершённые сессии всех игр по возрастанию времени начала. */
+    fun observeCompleted(): Flow<List<ProgressSession>>
+
+    /** Завершённые сессии игры по возрастанию времени начала. */
+    fun observeCompleted(gameId: GameId): Flow<List<ProgressSession>>
+
+    /** То же одним чтением — для сравнения на экране результата. */
+    suspend fun completed(gameId: GameId): List<ProgressSession>
+
+    /** Смены уровня игры по порядку. */
+    fun observeLevelChanges(gameId: GameId): Flow<List<LevelChangeRecord>>
 }

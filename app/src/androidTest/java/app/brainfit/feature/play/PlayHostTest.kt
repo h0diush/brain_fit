@@ -15,6 +15,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.brainfit.core.designsystem.BrainFitTheme
 import app.brainfit.core.designsystem.PrimaryButton
 import app.brainfit.data.db.BrainFitDatabase
+import app.brainfit.data.repository.ProgressRepositoryImpl
 import app.brainfit.data.repository.SessionRepositoryImpl
 import app.brainfit.domain.model.SessionMode
 import app.brainfit.domain.model.SessionStatus
@@ -77,6 +78,7 @@ class PlayHostTest {
         scope = scope,
         sessions = repo,
         difficulty = FakeDifficultyRepository(),
+        progress = ProgressRepositoryImpl(db.sessionDao(), db.difficultyDao()),
         settings = FakeSettingsRepository(),
         shake = FakeShakeMonitor(),
         clock = clock,

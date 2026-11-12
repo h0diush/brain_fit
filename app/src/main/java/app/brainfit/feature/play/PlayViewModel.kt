@@ -11,6 +11,7 @@ import app.brainfit.domain.model.GameCatalog
 import app.brainfit.domain.model.GameId
 import app.brainfit.domain.model.SessionMode
 import app.brainfit.domain.repository.DifficultyRepository
+import app.brainfit.domain.repository.ProgressRepository
 import app.brainfit.domain.repository.SessionRepository
 import app.brainfit.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -35,6 +36,7 @@ class PlayViewModel @Inject constructor(
     registry: GameRegistry,
     private val sessions: SessionRepository,
     private val difficulty: DifficultyRepository,
+    private val progress: ProgressRepository,
     private val settings: SettingsRepository,
     private val shake: ShakeMonitor,
     private val clock: MonotonicClock,
@@ -56,6 +58,7 @@ class PlayViewModel @Inject constructor(
             scope = viewModelScope,
             sessions = sessions,
             difficulty = difficulty,
+            progress = progress,
             settings = settings,
             shake = shake,
             clock = clock,

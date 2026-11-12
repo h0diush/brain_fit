@@ -35,6 +35,16 @@ interface SessionDao {
     @Query("SELECT COUNT(*) FROM exercise_sessions WHERE status = 'COMPLETED'")
     fun observeCompletedCount(): Flow<Int>
 
+    /** Для прогресса: все завершённые сессии по времени начала. */
+    @Query("SELECT * FROM exercise_sessions WHERE status = 'COMPLETED' ORDER BY startedAt, id")
+    fun observeAllCompleted(): Flow<List<ExerciseSessionEntity>>
+
+    @Query("SELECT * FROM exercise_sessions WHERE gameId = :gameId AND status = 'COMPLETED' ORDER BY startedAt, id")
+    fun observeCompletedFor(gameId: GameId): Flow<List<ExerciseSessionEntity>>
+
+    @Query("SELECT * FROM exercise_sessions WHERE gameId = :gameId AND status = 'COMPLETED' ORDER BY startedAt, id")
+    suspend fun completedFor(gameId: GameId): List<ExerciseSessionEntity>
+
     @Query("SELECT * FROM exercise_sessions WHERE id = :id")
     suspend fun byId(id: Long): ExerciseSessionEntity?
 
@@ -122,6 +132,9 @@ interface DifficultyDao {
 
     @Query("SELECT * FROM difficulty_changes WHERE gameId = :gameId ORDER BY at, id")
     suspend fun changesFor(gameId: GameId): List<DifficultyChangeEntity>
+
+    @Query("SELECT * FROM difficulty_changes WHERE gameId = :gameId ORDER BY at, id")
+    fun observeChangesFor(gameId: GameId): Flow<List<DifficultyChangeEntity>>
 
     @Query("SELECT MAX(at) FROM difficulty_changes WHERE gameId = :gameId")
     suspend fun lastChangeAt(gameId: GameId): Long?

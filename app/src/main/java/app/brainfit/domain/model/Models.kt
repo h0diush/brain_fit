@@ -162,3 +162,26 @@ data class PlanningInput(
     /** Игры, сыгранные в последней тренировке. */
     val previousWorkout: Set<GameId>,
 )
+
+/** Завершённая сессия со всем, что нужно прогрессу: метрики уже разобраны из metricsJson. */
+data class ProgressSession(
+    val id: Long,
+    val gameId: GameId,
+    val mode: SessionMode,
+    val startedAt: Long,
+    /** Уровень, с которого сессия началась; у обычной сессии он не меняется. */
+    val level: Int,
+    val isCalibration: Boolean,
+    val isShaky: Boolean,
+    val score: Double?,
+    val metrics: Map<String, Double>,
+)
+
+/** Смена уровня из истории. */
+data class LevelChangeRecord(
+    val gameId: GameId,
+    val fromLevel: Int,
+    val toLevel: Int,
+    val reason: String,
+    val at: Long,
+)
