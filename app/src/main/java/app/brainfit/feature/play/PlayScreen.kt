@@ -40,6 +40,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import app.brainfit.core.designsystem.HairlineDivider
+import app.brainfit.core.designsystem.Motion
+import app.brainfit.core.designsystem.SectionTitle
+import app.brainfit.core.designsystem.appear
 import app.brainfit.core.designsystem.BrainTheme
 import app.brainfit.core.designsystem.Dimens
 import app.brainfit.core.designsystem.MutedText
@@ -179,8 +187,10 @@ fun <S : Any, I : Any> PlayScreen(
                 }
 
                 ui.phase == PlayPhase.FINISHED -> Panel(
-                    title = ui.result?.let { "Результат: ${(it.score * 100).roundToInt()} %" } ?: "Сессия завершена",
-                    lines = ui.levelLines + ui.resultLines + ui.compareLines + listOfNotNull(
+                    title = if (ui.result != null) "Результат" else "Сессия завершена",
+                    hero = ui.result?.let { (it.score * 100).roundToInt() },
+                    highlights = ui.levelLines + ui.compareLines,
+                    lines = ui.resultLines + listOfNotNull(
                         if (ui.shakySession) {
                             "Сильно трясло. Сессия сохранена в истории, но на уровень и рекорды скорости не повлияет."
                         } else {
@@ -278,6 +288,10 @@ private fun Panel(
     lines: List<String>,
     textColor: Color = BrainTheme.colors.textSecondary,
     bullets: Boolean = false,
+    /** Крупный итог в процентах — отсчитывается от нуля при показе. */
+    hero: Int? = null,
+    /** Важные строки (уровень, сравнение) — над остальными, основным цветом. */
+    highlights: List<String> = emptyList(),
     buttons: @Composable () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().padding(vertical = Dimens.screenPadding)) {
@@ -289,13 +303,24 @@ private fun Panel(
                     .fillMaxWidth(),
                 verticalArrangement = Arrangement.Center,
             ) {
-                Text(title, style = MaterialTheme.typography.headlineMedium)
+                if (hero != null) {
+                    SectionTitle(title)
+                    ScoreHero(hero)
+                } else {
+                    Text(title, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.appear(0))
+                }
+                if (highlights.isNotEmpty()) {
+                    Column(Modifier.padding(top = 12.dp).appear(1), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        highlights.forEach { Text(it, style = MaterialTheme.typography.titleMedium) }
+                    }
+                    HairlineDivider(Modifier.padding(top = 12.dp))
+                }
                 lines.forEach { line ->
                     Text(
                         text = if (bullets) "•  $line" else line,
                         style = MaterialTheme.typography.bodyLarge,
                         color = textColor,
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier = Modifier.padding(top = 8.dp).appear(2),
                     )
                 }
             }
@@ -303,4 +328,17 @@ private fun Panel(
         Spacer(Modifier.heightIn(min = Dimens.gap))
         Column(verticalArrangement = Arrangement.spacedBy(Dimens.gap)) { buttons() }
     }
+}
+
+/** Итог сессии крупно: число отсчитывается от 0 до результата за 180 мс. */
+@Composable
+private fun ScoreHero(percent: Int) {
+    val shown = remember { Animatable(0f) }
+    LaunchedEffect(percent) { shown.animateTo(percent.toFloat(), tween(Motion.BASE, easing = Motion.Enter)) }
+    Text(
+        text = "${shown.value.roundToInt()} %",
+        style = MaterialTheme.typography.displayLarge,
+        color = BrainTheme.colors.accent,
+        modifier = Modifier.semantics { contentDescription = "Результат $percent %" },
+    )
 }

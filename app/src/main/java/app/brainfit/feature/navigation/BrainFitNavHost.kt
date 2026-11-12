@@ -32,8 +32,17 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import app.brainfit.core.designsystem.Dimens
 import app.brainfit.feature.games.GamesScreen
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.navigation.NavBackStackEntry
+import androidx.compose.ui.unit.dp
+import app.brainfit.core.designsystem.BrainTheme
+import app.brainfit.core.designsystem.HairlineDivider
+import app.brainfit.core.designsystem.Motion
 import app.brainfit.domain.model.GameId
 import app.brainfit.domain.model.SessionMode
 import app.brainfit.feature.workout.WorkoutScreen
@@ -87,7 +96,12 @@ fun BrainFitNavHost() {
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             if (currentTab != null || innerTitle != null) TopAppBar(
-                title = { Text(currentTab?.title ?: innerTitle.orEmpty()) },
+                title = {
+                    Text(
+                        currentTab?.title ?: innerTitle.orEmpty(),
+                        style = if (currentTab != null) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
+                    )
+                },
                 navigationIcon = {
                     if (innerTitle != null) {
                         IconButton(onClick = { nav.popBackStack() }) {
@@ -107,7 +121,8 @@ fun BrainFitNavHost() {
         },
         bottomBar = {
             if (currentTab != null) {
-                NavigationBar {
+                HairlineDivider()
+                NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
                     Routes.tabs.forEach { tab ->
                         NavigationBarItem(
                             selected = tab == currentTab,
@@ -121,8 +136,11 @@ fun BrainFitNavHost() {
                             icon = { Icon(tab.icon, contentDescription = null) },
                             label = { Text(tab.title) },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                selectedIconColor = BrainTheme.colors.textPrimary,
+                                selectedTextColor = BrainTheme.colors.textPrimary,
+                                unselectedIconColor = BrainTheme.colors.textSecondary,
+                                unselectedTextColor = BrainTheme.colors.textSecondary,
+                                indicatorColor = BrainTheme.colors.surfaceSecondary,
                             ),
                         )
                     }
@@ -134,10 +152,15 @@ fun BrainFitNavHost() {
             navController = nav,
             startDestination = Routes.HOME,
             modifier = Modifier.padding(padding),
-            enterTransition = { fadeIn(tween(Dimens.ANIM_MS)) },
-            exitTransition = { fadeOut(tween(Dimens.ANIM_MS)) },
-            popEnterTransition = { fadeIn(tween(Dimens.ANIM_MS)) },
-            popExitTransition = { fadeOut(tween(Dimens.ANIM_MS)) },
+            // Вкладки сменяются «через затухание» на месте; вложенный экран въезжает справа и уходит вправо.
+            enterTransition = {
+                if (isTabSwitch()) tabEnter() else slideInHorizontally(tween(Motion.BASE, easing = Motion.Enter)) { it / 8 } + tabEnter()
+            },
+            exitTransition = { fadeOut(tween(Motion.EXIT, easing = Motion.Exit)) },
+            popEnterTransition = { tabEnter() },
+            popExitTransition = {
+                slideOutHorizontally(tween(Motion.EXIT, easing = Motion.Exit)) { it / 8 } + fadeOut(tween(Motion.EXIT, easing = Motion.Exit))
+            },
         ) {
             composable(Routes.HOME) {
                 HomeScreen(onOpenWorkout = { nav.navigate(Routes.workout(it)) { launchSingleTop = true } })
@@ -170,3 +193,12 @@ fun BrainFitNavHost() {
         }
     }
 }
+
+private val tabRoutes = Routes.tabs.map { it.route }.toSet()
+
+/** Переход между двумя вкладками нижней панели. */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch(): Boolean =
+    initialState.destination.route in tabRoutes && targetState.destination.route in tabRoutes
+
+private fun tabEnter(): EnterTransition =
+    fadeIn(tween(Motion.BASE, easing = Motion.Enter)) + scaleIn(tween(Motion.BASE, easing = Motion.Enter), initialScale = 0.98f)

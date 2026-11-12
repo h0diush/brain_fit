@@ -2,6 +2,9 @@ package app.brainfit.domain.progress
 
 import app.brainfit.domain.model.LevelChangeRecord
 import app.brainfit.domain.model.ProgressSession
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.roundToInt
 
 /** Периоды прогресса (ТЗ, раздел 7). */
 enum class ProgressPeriod(val days: Int) { WEEK(7), MONTH(30), QUARTER(90) }
@@ -31,6 +34,12 @@ data class PeriodSummary(
 ) {
     val enoughData: Boolean get() = points.size >= MIN_SESSIONS_FOR_CHART
 }
+
+/**
+ * Сравнение с прошлым периодом той же длины: медианы главной метрики на одном уровне. Медиана, а не
+ * среднее, чтобы одна неудачная сессия не перевешивала.
+ */
+data class Trend(val level: Int, val current: Double, val previous: Double, val currentCount: Int, val previousCount: Int)
 
 /** Серия дней подряд хотя бы с одной сессией. */
 data class Streak(val current: Int, val best: Int, val playedToday: Boolean)
@@ -156,5 +165,58 @@ object Progress {
             "Рекорд уровня $level — ${metric.format(best.value)}."
         }
         return listOf("${metric.title} в прошлый раз — ${metric.format(last)}, $verdict.", recordLine)
+    }
+
+    /**
+     * Сколько сессий в каждый день с [fromDay] по [toDay] включительно (дни с эпохи). [days] — дни сессий,
+     * по одному на сессию; дни вне промежутка не считаются.
+     */
+    fun dailyCounts(days: List<Long>, fromDay: Long, toDay: Long): List<Int> {
+        if (toDay < fromDay) return emptyList()
+        val counts = IntArray((toDay - fromDay + 1).toInt())
+        days.forEach { day -> if (day in fromDay..toDay) counts[(day - fromDay).toInt()]++ }
+        return counts.toList()
+    }
+
+    /**
+     * Тренд метрики: текущий период [[currentFrom], ∞) против прошлого [[previousFrom], [currentFrom]).
+     * Уровень — тот, на котором последняя подходящая сессия текущего периода: уровни между собой не сравнить.
+     * Сессии те же, что для рекордов ([MetricSpec.counts]). В каждом периоде нужно хотя бы
+     * [MIN_SESSIONS_FOR_CHART] сессий на этом уровне, иначе null.
+     */
+    fun trend(sessions: List<ProgressSession>, metric: MetricSpec, currentFrom: Long, previousFrom: Long): Trend? {
+        val usable = sessions.filter(metric::counts).sortedWith(compareBy({ it.startedAt }, { it.id }))
+        val level = usable.lastOrNull { it.startedAt >= currentFrom }?.level ?: return null
+        val current = usable.filter { it.level == level && it.startedAt >= currentFrom }.map { metric.valueOf(it)!! }
+        val previous = usable.filter { it.level == level && it.startedAt in previousFrom until currentFrom }.map { metric.valueOf(it)!! }
+        if (current.size < MIN_SESSIONS_FOR_CHART || previous.size < MIN_SESSIONS_FOR_CHART) return null
+        return Trend(level, median(current), median(previous), current.size, previous.size)
+    }
+
+    /** Результаты (score) последних [limit] сессий по порядку — для мини-графика на карточке игры. */
+    fun recentScores(sessions: List<ProgressSession>, limit: Int = 10): List<Double> =
+        sessions.sortedWith(compareBy({ it.startedAt }, { it.id })).mapNotNull { it.score }.takeLast(limit)
+
+    private fun median(values: List<Double>): Double {
+        val sorted = values.sorted()
+        val mid = sorted.size / 2
+        return if (sorted.size % 2 == 1) sorted[mid] else (sorted[mid - 1] + sorted[mid]) / 2
+    }
+
+    /**
+     * Тренд словами: «лучше на 12 %» и направление (true — лучше, false — хуже, null — так же).
+     * У долей разница в процентных пунктах: «точность лучше на 5 п. п.», а не «на 6 %».
+     */
+    fun trendText(metric: MetricSpec, trend: Trend): Pair<String, Boolean?> {
+        if (metric.format(trend.current) == metric.format(trend.previous)) return "так же" to null
+        val better = metric.isBetter(trend.current, trend.previous)
+        val word = if (better) "лучше" else "хуже"
+        val size = when {
+            // Разница видимых процентов: 87 % и 88 % — «на 1 п. п.», а не «на 0».
+            metric.share -> "${abs((trend.current * 100).roundToInt() - (trend.previous * 100).roundToInt())} п. п."
+            trend.previous == 0.0 -> metric.format(abs(trend.current - trend.previous))
+            else -> "${max(1, (abs(trend.current - trend.previous) / abs(trend.previous) * 100).roundToInt())} %"
+        }
+        return "$word на $size" to better
     }
 }

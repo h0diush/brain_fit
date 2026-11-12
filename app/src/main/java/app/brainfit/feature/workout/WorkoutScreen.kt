@@ -20,6 +20,17 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.Icon
+import app.brainfit.core.designsystem.HairlineDivider
+import app.brainfit.core.designsystem.Meter
+import app.brainfit.core.designsystem.appear
 import app.brainfit.core.designsystem.BrainCard
 import app.brainfit.core.designsystem.BrainTheme
 import app.brainfit.core.designsystem.Dimens
@@ -116,10 +127,14 @@ fun WorkoutScreen(
                 Text("Тренировка не найдена", style = MaterialTheme.typography.headlineMedium)
                 return@Column
             }
-            Text(workout.mode.title(), style = MaterialTheme.typography.headlineMedium)
-            MutedText(statusLine(workout))
-            BrainCard {
-                workout.items.forEach { item -> ItemRow(item, isNext = item == workout.next && workout.status == WorkoutStatus.IN_PROGRESS) }
+            Text(workout.mode.title(), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.appear(0))
+            Meter(workout.doneCount.toFloat() / workout.items.size.coerceAtLeast(1), Modifier.appear(0))
+            MutedText(statusLine(workout), Modifier.appear(0))
+            BrainCard(Modifier.appear(1)) {
+                workout.items.forEachIndexed { i, item ->
+                    if (i > 0) HairlineDivider()
+                    ItemRow(item, isNext = item == workout.next && workout.status == WorkoutStatus.IN_PROGRESS)
+                }
             }
             state.error?.let { Text(it, color = BrainTheme.colors.error, style = MaterialTheme.typography.bodyLarge) }
         }
@@ -148,24 +163,50 @@ private fun statusLine(workout: Workout): String = when (workout.status) {
     WorkoutStatus.ABANDONED -> "Тренировка закрыта: её заменила новая или закончились сутки. Сыгранные игры остались в истории."
 }
 
+/** Шаг тренировки: кружок с номером (сыграно — галочка, пропущено — прочерк), название и состояние. */
 @Composable
 private fun ItemRow(item: WorkoutItem, isNext: Boolean) {
+    val colors = BrainTheme.colors
     val status = when {
         item.sessionId != null -> "Сыграно" + (item.score?.let { " · ${Fmt.percent(it)}" } ?: "")
         item.skipped -> "Пропущено"
         isNext -> "Сейчас"
         else -> "Дальше"
     }
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        val played = item.sessionId != null
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .let {
+                    when {
+                        played -> it.background(colors.accent, CircleShape)
+                        isNext -> it.border(2.dp, colors.accent, CircleShape)
+                        else -> it.border(Dimens.hairline, colors.outline, CircleShape)
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                played -> Icon(Icons.Rounded.Check, contentDescription = null, tint = colors.onAccent, modifier = Modifier.size(18.dp))
+                item.skipped -> Text("—", style = MaterialTheme.typography.labelLarge, color = colors.textSecondary)
+                else -> Text(
+                    "${item.order + 1}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (isNext) colors.accent else colors.textSecondary,
+                )
+            }
+        }
         Text(
-            "${item.order + 1}. ${GameCatalog.get(item.gameId).title}",
+            GameCatalog.get(item.gameId).title,
             style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f),
+            color = if (item.skipped) colors.textSecondary else colors.textPrimary,
+            modifier = Modifier.weight(1f).padding(start = 12.dp),
         )
         Text(
             status,
             style = MaterialTheme.typography.labelLarge,
-            color = if (isNext) BrainTheme.colors.accent else BrainTheme.colors.textSecondary,
+            color = if (isNext || played) colors.accent else colors.textSecondary,
         )
     }
 }

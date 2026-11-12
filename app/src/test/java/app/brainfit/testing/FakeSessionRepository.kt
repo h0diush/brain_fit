@@ -147,6 +147,7 @@ class FakeSessionRepository(levels: Map<GameId, Int> = emptyMap()) : SessionRepo
         isShaky = isShaky,
         score = score,
         metrics = Json.parseObject(metricsJson).mapNotNull { (k, v) -> (v as? Number)?.let { k to it.toDouble() } }.toMap(),
+        activeMs = activeMs,
     )
 
     private fun completedRows() = rows.filter { it.status == SessionStatus.COMPLETED }.sortedBy { it.session.startedAt }

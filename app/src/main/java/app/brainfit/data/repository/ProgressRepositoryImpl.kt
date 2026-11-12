@@ -34,6 +34,7 @@ internal fun ExerciseSessionEntity.toProgress(): ProgressSession {
         isShaky = isShaky,
         score = score,
         metrics = metrics.mapNotNull { (key, value) -> (value as? Number)?.let { key to it.toDouble() } }.toMap(),
+        activeMs = activeMs,
     )
 }
 

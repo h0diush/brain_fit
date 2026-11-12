@@ -12,7 +12,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.brainfit.core.designsystem.BrainTheme
-import app.brainfit.core.designsystem.Dimens
+import app.brainfit.core.designsystem.Motion
 import app.brainfit.domain.progress.Better
 import app.brainfit.domain.progress.ChartPoint
 import app.brainfit.domain.progress.MetricSpec
@@ -138,8 +138,9 @@ fun MetricChart(points: List<ChartPoint>, metric: MetricSpec, zone: ZoneId, modi
         // Весь период на одном экране: без прокрутки и масштаба.
         scrollState = rememberVicoScrollState(scrollEnabled = false),
         zoomState = rememberVicoZoomState(zoomEnabled = false, initialZoom = remember { Zoom.Content }),
-        animationSpec = tween(Dimens.ANIM_MS),
-        animateIn = false,
+        // Линия вырастает при первом показе и плавно перестраивается при смене периода — в пределах 200 мс.
+        animationSpec = tween(Motion.BASE, easing = Motion.Standard),
+        animateIn = true,
     )
 }
 

@@ -85,15 +85,18 @@ private fun BrainColors.toScheme(dark: Boolean): ColorScheme {
         surfaceContainerHighest = surfaceSecondary,
         outline = outline,
         outlineVariant = surfaceSecondary,
+        surfaceTint = Color.Transparent,
         error = error,
         onError = background,
     )
 }
 
+/** Inter с моноширинными цифрами (tnum): числа в статистике стоят ровно, а меняющееся значение не «прыгает». */
 private fun TextStyle.inter(weight: FontWeight? = null, tracking: Float? = null) = copy(
     fontFamily = Inter,
     fontWeight = weight ?: fontWeight,
     letterSpacing = tracking?.sp ?: letterSpacing,
+    fontFeatureSettings = "tnum",
 )
 
 private val AppTypography = Typography().let { t ->
@@ -116,12 +119,13 @@ private val AppTypography = Typography().let { t ->
     )
 }
 
+/** Строгие формы: небольшие радиусы, никаких «таблеток» у карточек и кнопок. */
 private val AppShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(20.dp),
 )
 
 /** Общие размеры и длительности. ТЗ: цели касания не меньше 48 dp, анимации интерфейса не длиннее 200 мс. */
@@ -130,7 +134,10 @@ object Dimens {
     val screenPadding = 16.dp
     val cardPadding = 16.dp
     val gap = 12.dp
-    const val ANIM_MS = 150
+
+    /** Тонкая линия: рамки карточек и разделители. */
+    val hairline = 1.dp
+    const val ANIM_MS = Motion.BASE
 }
 
 val LocalBrainColors = staticCompositionLocalOf { DarkColors }

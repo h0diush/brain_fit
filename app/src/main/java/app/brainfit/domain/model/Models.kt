@@ -175,6 +175,8 @@ data class ProgressSession(
     val isShaky: Boolean,
     val score: Double?,
     val metrics: Map<String, Double>,
+    /** Активное время без пауз. */
+    val activeMs: Long = 0,
 )
 
 /** Смена уровня из истории. */

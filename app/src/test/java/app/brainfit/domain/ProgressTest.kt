@@ -165,4 +165,45 @@ class ProgressTest {
         assertEquals("117 мс", ProgressMetrics.main(GameId.DOUBLE_DECISION).format(116.7))
         assertEquals("1,25", ProgressMetrics.of(GameId.NBACK)[1].format(1.249))
     }
+
+    @Test
+    fun dailyCountsCoverEveryDayOfThePeriod() {
+        assertEquals(listOf(2, 0, 1), Progress.dailyCounts(listOf(9, 10, 10, 12, 13), fromDay = 10, toDay = 12))
+        assertTrue(Progress.dailyCounts(listOf(1), fromDay = 5, toDay = 4).isEmpty())
+    }
+
+    @Test
+    fun trendComparesMediansOnTheLatestLevel() {
+        val sessions = listOf(
+            // Прошлый период, уровень 2: медиана 900.
+            session(at = 10, ms = 1_000.0), session(at = 11, ms = 900.0), session(at = 12, ms = 800.0),
+            // Текущий период, уровень 2: медиана 720; калибровка и тряская — мимо.
+            session(at = 100, ms = 700.0), session(at = 101, ms = 720.0), session(at = 102, ms = 760.0),
+            session(at = 103, ms = 100.0, calibration = true), session(at = 104, ms = 100.0, shaky = true),
+        )
+        val trend = Progress.trend(sessions, msPerCell, currentFrom = 100, previousFrom = 0)!!
+        assertEquals(2, trend.level)
+        assertEquals(720.0, trend.current, 1e-9)
+        assertEquals(900.0, trend.previous, 1e-9)
+        assertEquals("лучше на 20 %" to true, Progress.trendText(msPerCell, trend))
+
+        // Последняя сессия — на уровне 3, а там прошлого периода нет.
+        assertNull(Progress.trend(sessions + session(at = 105, level = 3), msPerCell, currentFrom = 100, previousFrom = 0))
+        // Мало сессий в прошлом периоде.
+        assertNull(Progress.trend(sessions.drop(1), msPerCell, currentFrom = 100, previousFrom = 0))
+    }
+
+    @Test
+    fun trendTextUsesPointsForSharesAndSaysSameWhenInvisible() {
+        val share = schulteAccuracy
+        assertEquals("хуже на 5 п. п." to false, Progress.trendText(share, app.brainfit.domain.progress.Trend(2, 0.85, 0.90, 3, 3)))
+        assertEquals("лучше на 1 п. п." to true, Progress.trendText(share, app.brainfit.domain.progress.Trend(2, 0.876, 0.874, 3, 3)))
+        assertEquals("так же" to null, Progress.trendText(msPerCell, app.brainfit.domain.progress.Trend(2, 801.0, 799.0, 3, 3)))
+    }
+
+    @Test
+    fun recentScoresAreTheLastOnesInOrder() {
+        val sessions = (1..12).map { session(at = it.toLong()).copy(score = it / 100.0) }.shuffled(kotlin.random.Random(1))
+        assertEquals((3..12).map { it / 100.0 }, Progress.recentScores(sessions))
+    }
 }

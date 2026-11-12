@@ -38,7 +38,7 @@ gradlew.bat connectedDebugAndroidTest  # Room на устройстве (app/src
 ## Структура (`app/src/main/java/app/brainfit`)
 
 ```
-core/designsystem/   Palette (токены, чистый Kotlin), Theme, Components
+core/designsystem/   Palette (токены, чистый Kotlin), Theme, Components, Motion (длительности, кривые, appear), Charts (Sparkline, ActivityGrid)
 core/time/           MonotonicClock, WallClock, Stopwatch, FrameClock, LocalDays (местные даты)
 core/sensors/        ShakeMeter, ShakeConfig (чистый Kotlin), SensorShakeMonitor
 core/util/           Json (запись JSON без библиотек)

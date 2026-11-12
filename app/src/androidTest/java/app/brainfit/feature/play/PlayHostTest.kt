@@ -177,7 +177,7 @@ class PlayHostTest {
         click("Попал")
         waitForText("Нажатий: 1")
         click("Попал")
-        waitForText("Результат: 100 %")
+        waitForText("100 %")
 
         val session = runBlocking { db.sessionDao().byId(draftIdOfOnlySession())!! }
         assertEquals(SessionStatus.COMPLETED, session.status)
@@ -213,7 +213,7 @@ class PlayHostTest {
         waitForText("Нажатий: 0")
         click("Попал")
         click("Попал")
-        waitForText("Результат: 100 %")
+        waitForText("100 %")
 
         val trials = runBlocking { db.trialDao().forSession(draftIdOfOnlySession()) }
         assertEquals(listOf(0 to 0, 0 to 1, 1 to 2, 1 to 3), trials.map { it.round to it.index })
